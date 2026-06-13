@@ -26,6 +26,12 @@ its page redirects to Green Spaces.)
   when zoomed in; at the top raster zoom every named park is labelled.
 - A **landing page** with copy-paste "add this layer" instructions for both
   editors.
+- A **gap-review page** (`/gaps/`) that compares the City polygons against
+  park areas already in OpenStreetMap and lists the gaps &mdash; City parks with
+  no overlapping OSM area ("missing") and matched parks whose OSM name differs
+  ("mismatch") &mdash; on an interactive map and a filterable table. OSM areas
+  are pulled from Overpass; matching is by spatial overlap (see
+  [`src/compare.py`](src/compare.py)).
 
 All of it is published to GitHub Pages and rebuilt weekly.
 
@@ -52,12 +58,13 @@ the City's ALL CAPS to title case.
 ```
 python run.py download   # fetch the latest Green Spaces GeoJSON (smart-cached)
 python run.py slim       # filter to park-ish polygons -> slim GeoJSONL
+python run.py compare    # diff City polygons against OSM -> data/gaps.geojson
 python run.py vector     # build vector (MVT) tiles via WSL tippecanoe
 python run.py raster     # build labelled raster (PNG) tiles
-python run.py site       # render the landing page
+python run.py site       # render the landing page (+ the gap-review page)
 python run.py publish    # force-push the site to the gh-pages branch
 
-python run.py build      # download + slim + vector + raster + site
+python run.py build      # download + slim + compare + vector + raster + site
 python run.py update     # build + publish  (the scheduled entry point)
 ```
 

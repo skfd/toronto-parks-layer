@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src import config
 from src.download import download
 from src.slim import slim
+from src.compare import compare
 from src.vector import build_vector
 from src.raster import build_raster
 from src.site import build_site
@@ -29,6 +30,11 @@ def cmd_download(args):
 def cmd_slim(args):
     _banner("Slim")
     slim(_latest_geojson())
+
+
+def cmd_compare(args):
+    _banner("Compare with OSM")
+    compare()
 
 
 def cmd_vector(args):
@@ -58,6 +64,11 @@ def cmd_publish(args):
 def cmd_build(args):
     cmd_download(args)
     cmd_slim(args)
+    # The OSM comparison is best-effort: a flaky Overpass must not stop a build.
+    try:
+        cmd_compare(args)
+    except Exception as e:
+        print(f"Warning: OSM comparison skipped ({e}).")
     cmd_vector(args)
     cmd_raster(args)
     cmd_site(args)
@@ -84,6 +95,7 @@ def _latest_geojson():
 COMMANDS = {
     "download": (cmd_download, "Download the latest Green Spaces GeoJSON"),
     "slim": (cmd_slim, "Filter parks into slim GeoJSONL"),
+    "compare": (cmd_compare, "Compare City polygons against OSM -> gaps.geojson"),
     "vector": (cmd_vector, "Build vector (MVT) tiles via WSL tippecanoe"),
     "raster": (cmd_raster, "Build labelled raster (PNG) tiles"),
     "site": (cmd_site, "Render the GitHub Pages landing page"),

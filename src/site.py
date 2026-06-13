@@ -64,9 +64,49 @@ def build_site():
         if os.path.isfile(src):
             _copy_image(src, os.path.join(config.SITE_DIR, name),
                         SCREENSHOT_MAX_WIDTH)
+    _build_gaps_page(build_date)
     # .nojekyll stops GitHub Pages running Jekyll over the tile directories.
     open(os.path.join(config.SITE_DIR, ".nojekyll"), "w").close()
     print(f"Site rendered: {config.SITE_DIR}")
+
+
+def _build_gaps_page(build_date):
+    """Render gaps/ (map + table) when a comparison has produced gaps.geojson."""
+    if not os.path.isfile(config.GAPS_GEOJSON_PATH):
+        print("  (no gaps.geojson -- run 'compare'; skipping gap page)")
+        return
+
+    gaps_dir = os.path.join(config.SITE_DIR, "gaps")
+    os.makedirs(gaps_dir, exist_ok=True)
+
+    summary = {}
+    if os.path.isfile(config.GAPS_COUNT_PATH):
+        with open(config.GAPS_COUNT_PATH, encoding="utf-8") as f:
+            summary = json.load(f)
+
+    with open(os.path.join(config.ASSETS_DIR, "gaps.html.tmpl"),
+              encoding="utf-8") as f:
+        html = f.read()
+    replacements = {
+        "{{PAGES_URL}}": config.PAGES_URL,
+        "{{BUILD_DATE}}": build_date,
+        "{{DATA_DATE}}": _data_date(build_date),
+        "{{MISSING_COUNT}}": f"{summary.get('missing', 0):,}",
+        "{{MISMATCH_COUNT}}": f"{summary.get('mismatch', 0):,}",
+        "{{CITY_COUNT}}": f"{summary.get('city', 0):,}",
+        "{{OSM_COUNT}}": f"{summary.get('osm_rings', 0):,}",
+        "{{GITHUB_REPO}}": config.GITHUB_REPO,
+    }
+    for key, value in replacements.items():
+        html = html.replace(key, value)
+
+    with open(os.path.join(gaps_dir, "index.html"), "w", encoding="utf-8") as f:
+        f.write(html)
+    shutil.copy(config.GAPS_GEOJSON_PATH, os.path.join(gaps_dir, "gaps.geojson"))
+    for name in ("gaps.css", "gaps.js"):
+        shutil.copy(os.path.join(config.ASSETS_DIR, name),
+                    os.path.join(gaps_dir, name))
+    print(f"Gap page rendered: {gaps_dir}")
 
 
 def _data_date(fallback):

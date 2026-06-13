@@ -74,3 +74,22 @@ INCLUDE_AREA_CLASSES = frozenset({
 NAME_KEY = "AREA_NAME"        # all-caps name, e.g. "TAYLOR CREEK PARK"
 CLASS_KEY = "AREA_CLASS"      # e.g. "Park", "Cemetery", "Golf Course"
 AREA_ID_KEY = "AREA_ID"       # stable city identifier for the polygon
+
+# --- OSM comparison (gap-review page) ---
+# Park-like areas are pulled from OSM via Overpass and matched against the kept
+# City polygons by spatial overlap; the gaps feed build/site/gaps/.
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Overpass rejects the default requests User-Agent (HTTP 406); identify the tool.
+USER_AGENT = "toronto-parks-layer/1.0 (https://github.com/skfd/toronto-parks-layer)"
+# Toronto bounding box (S, W, N, E), a touch larger than the city. OSM areas
+# outside the city simply match nothing, so a loose box is harmless.
+TORONTO_BBOX = (43.58, -79.64, 43.86, -79.12)
+# OSM tags treated as a park-like area (the OSM analogue of INCLUDE_AREA_CLASSES).
+OSM_AREA_TAGS = {
+    "leisure": ("park", "garden", "nature_reserve", "golf_course", "common"),
+    "landuse": ("cemetery", "recreation_ground"),
+    "amenity": ("grave_yard",),
+}
+OSM_CACHE_PATH = os.path.join(DATA_DIR, "osm-parks.json")
+GAPS_GEOJSON_PATH = os.path.join(DATA_DIR, "gaps.geojson")
+GAPS_COUNT_PATH = os.path.join(DATA_DIR, "gaps.count.json")
