@@ -3,12 +3,15 @@
 (function () {
   "use strict";
 
-  var COLORS = { missing: "#d33", mismatch: "#e0a800" };
+  var COLORS = {
+    missing: "#7048e8", mismatch: "#1c7ed6", unnamed: "#e8590c", trca: "#868e96",
+  };
   var map;
   var features = [];
   var markers = [];      // CircleMarker per feature, indexed like features
   var highlight = null;  // outline of the currently selected gap
   var selectedRow = null;
+  var selectedIndex = null;  // feature index of the current selection
 
   function init() {
     var el = document.getElementById("gap-map");
@@ -43,6 +46,7 @@
     features.forEach(function (f, i) {
       f.properties._i = i;
       var center = centroid(f.geometry);
+      f._center = center;
       var m = L.circleMarker(center, {
         radius: 6,
         color: "#fff",
@@ -50,7 +54,7 @@
         fillColor: COLORS[f.properties.status] || "#888",
         fillOpacity: 0.95,
       });
-      m.bindPopup(popupHtml(f.properties));
+      m.bindPopup(popupHtml(f));
       m.on("click", function () { select(i, false); });
       m.addTo(map);
       markers[i] = m;
@@ -96,16 +100,45 @@
     return a / 2;
   }
 
-  function popupHtml(p) {
+  // Where to send the user for a feature: the openstreetmap.org view and the
+  // iD editor. Points at the existing way when there is one, else the centroid.
+  function osmTargets(f) {
+    var p = f.properties;
+    var m = p.osm_url && p.osm_url.match(/(node|way|relation)\/(\d+)/);
+    if (m) {
+      return {
+        osm: p.osm_url,
+        id: "https://www.openstreetmap.org/edit?" + m[1] + "=" + m[2],
+      };
+    }
+    var c = f._center;
+    if (!c) { return null; }
+    var ll = c[0].toFixed(5) + "/" + c[1].toFixed(5);
+    return {
+      osm: "https://www.openstreetmap.org/#map=18/" + ll,
+      id: "https://www.openstreetmap.org/edit#map=18/" + ll,
+    };
+  }
+
+  // "OSM · iD" link pair shared by the table and the popups.
+  function osmPairHtml(f) {
+    var t = osmTargets(f);
+    if (!t) { return ""; }
+    return '<a href="' + t.osm + '" target="_blank" rel="noopener" ' +
+      'title="View on openstreetmap.org (hotkey: O)">OSM</a> &middot; ' +
+      '<a href="' + t.id + '" target="_blank" rel="noopener" ' +
+      'title="Open in the iD editor (hotkey: I)">iD</a>';
+  }
+
+  function popupHtml(f) {
+    var p = f.properties;
     var h = "<strong>" + esc(p.name || "(unnamed)") + "</strong><br>" +
       esc(p["class"]) + " &middot; " + p.status;
     if (p.status === "mismatch") {
       h += "<br>OSM name: " + (p.osm_name ? esc(p.osm_name) : "<em>none</em>");
     }
-    if (p.osm_url) {
-      h += '<br><a href="' + p.osm_url +
-        '" target="_blank" rel="noopener">view in OSM</a>';
-    }
+    var links = osmPairHtml(f);
+    if (links) { h += "<br>" + links; }
     return h;
   }
 
@@ -116,11 +149,10 @@
     });
     tbody.innerHTML = rows.map(function (f) {
       var p = f.properties;
-      var osm = p.status === "mismatch"
-        ? (p.osm_url
-            ? '<a href="' + p.osm_url + '" target="_blank" rel="noopener">' +
-              (p.osm_name ? esc(p.osm_name) : "unnamed") + "</a>"
-            : '<span class="osm-blank">unnamed</span>')
+      var links = osmPairHtml(f);
+      var osm = links
+        ? (p.osm_name ? '<span class="osm-name">' + esc(p.osm_name) + "</span>" : "") +
+          '<span class="osm-links">' + links + "</span>"
         : '<span class="osm-blank">&mdash;</span>';
       return '<tr data-i="' + p._i + '" data-status="' + p.status +
         '" data-name="' + esc((p.name || "").toLowerCase()) + '">' +
@@ -141,6 +173,7 @@
   function select(i, fromTable) {
     var f = features[i];
     if (!f) { return; }
+    selectedIndex = i;
 
     if (highlight) { map.removeLayer(highlight); }
     highlight = L.geoJSON(f, {
@@ -159,19 +192,26 @@
   }
 
   function wireControls() {
-    var showMissing = document.getElementById("show-missing");
-    var showMismatch = document.getElementById("show-mismatch");
+    var boxes = {
+      missing: document.getElementById("show-missing"),
+      mismatch: document.getElementById("show-mismatch"),
+      unnamed: document.getElementById("show-unnamed"),
+      trca: document.getElementById("show-trca"),
+    };
     var filter = document.getElementById("filter");
 
+    function statusOn(status) {
+      var b = boxes[status];
+      return b ? b.checked : true;
+    }
+
     function apply() {
-      var wantMissing = showMissing.checked;
-      var wantMismatch = showMismatch.checked;
       var q = filter.value.trim().toLowerCase();
 
       features.forEach(function (f) {
         var p = f.properties;
-        var statusOn = p.status === "missing" ? wantMissing : wantMismatch;
-        var hit = statusOn && (!q || (p.name || "").toLowerCase().indexOf(q) > -1);
+        var hit = statusOn(p.status) &&
+          (!q || (p.name || "").toLowerCase().indexOf(q) > -1);
         var m = markers[p._i];
         if (hit && !map.hasLayer(m)) { map.addLayer(m); }
         else if (!hit && map.hasLayer(m)) { map.removeLayer(m); }
@@ -179,15 +219,30 @@
 
       var rows = document.querySelectorAll("#gap-table tbody tr");
       Array.prototype.forEach.call(rows, function (tr) {
-        var statusOn = tr.dataset.status === "missing" ? wantMissing : wantMismatch;
-        var hit = statusOn && (!q || tr.dataset.name.indexOf(q) > -1);
+        var hit = statusOn(tr.dataset.status) &&
+          (!q || tr.dataset.name.indexOf(q) > -1);
         tr.style.display = hit ? "" : "none";
       });
     }
 
-    showMissing.addEventListener("change", apply);
-    showMismatch.addEventListener("change", apply);
+    Object.keys(boxes).forEach(function (k) {
+      if (boxes[k]) { boxes[k].addEventListener("change", apply); }
+    });
     filter.addEventListener("input", apply);
+    apply();
+
+    // O / I open the selected gap on openstreetmap.org / in the iD editor.
+    document.addEventListener("keydown", function (ev) {
+      if (ev.ctrlKey || ev.metaKey || ev.altKey) { return; }
+      if (/^(input|textarea|select)$/i.test(ev.target.tagName)) { return; }
+      var key = ev.key.toLowerCase();
+      if (key !== "o" && key !== "i") { return; }
+      if (selectedIndex == null) { return; }
+      var t = osmTargets(features[selectedIndex]);
+      if (!t) { return; }
+      ev.preventDefault();
+      window.open(key === "o" ? t.osm : t.id, "_blank", "noopener");
+    });
   }
 
   function esc(s) {

@@ -33,10 +33,10 @@ body.app { margin: 0; display: flex; flex-direction: column; }
 }
 .count strong { font-size: 1.15rem; margin-right: .35rem; }
 .count span { color: var(--muted); font-size: .82rem; }
-.count.missing { border-left: 4px solid #d33; }
-.count.mismatch { border-left: 4px solid #e0a800; }
-.count.unnamed { border-left: 4px solid #2b8cbe; }
-.count.trca { border-left: 4px solid #888; }
+.count.missing { border-left: 4px solid #7048e8; }
+.count.mismatch { border-left: 4px solid #1c7ed6; }
+.count.unnamed { border-left: 4px solid #e8590c; }
+.count.trca { border-left: 4px solid #868e96; }
 .count.meta-count {
   display: flex;
   align-items: center;
@@ -79,10 +79,10 @@ body.app { margin: 0; display: flex; flex-direction: column; }
 .hint { margin: .6rem 0 0; color: var(--muted); font-size: .82rem; line-height: 1.45; }
 
 .swatch { display: inline-block; width: .9rem; height: .9rem; border-radius: 50%; }
-.swatch.missing { background: #d33; }
-.swatch.mismatch { background: #e0a800; }
-.swatch.unnamed { background: #2b8cbe; }
-.swatch.trca { background: #888; }
+.swatch.missing { background: #7048e8; }
+.swatch.mismatch { background: #1c7ed6; }
+.swatch.unnamed { background: #e8590c; }
+.swatch.trca { background: #868e96; }
 
 /* --- data table --- */
 #gap-table { font-size: .9rem; }
@@ -98,11 +98,23 @@ body.app { margin: 0; display: flex; flex-direction: column; }
 #gap-table tbody tr { cursor: pointer; }
 #gap-table tbody tr:hover { background: #f0f8f3; }
 #gap-table tbody tr.selected { background: #e6f4ec; }
-#gap-table .status-missing { color: #b00; font-weight: 600; }
-#gap-table .status-mismatch { color: #9a7400; font-weight: 600; }
-#gap-table .status-unnamed { color: #1f6a92; font-weight: 600; }
+#gap-table .status-missing { color: #5f3dc4; font-weight: 600; }
+#gap-table .status-mismatch { color: #1864ab; font-weight: 600; }
+#gap-table .status-unnamed { color: #c2410c; font-weight: 600; }
 #gap-table .status-trca { color: #666; font-weight: 600; }
 #gap-table .osm-blank { color: var(--muted); }
+#gap-table .osm-name { display: block; color: var(--muted); font-size: .85em; }
+#gap-table .osm-links { white-space: nowrap; }
+
+.hint kbd {
+  display: inline-block;
+  padding: 0 .35em;
+  font: 600 .9em/1.5 ui-monospace, Menlo, Consolas, monospace;
+  color: var(--ink, #222);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
 
 @media (max-width: 820px) {
   .layout { flex-direction: column; }

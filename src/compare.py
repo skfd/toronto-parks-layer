@@ -54,7 +54,9 @@ def _overpass_query():
         rx = "|".join(values)
         parts.append(f'  way["{key}"~"^({rx})$"]({bbox});')
         parts.append(f'  relation["{key}"~"^({rx})$"]({bbox});')
-    return "[out:json][timeout:180];\n(\n" + "\n".join(parts) + "\n);\nout tags geom;"
+    # "out geom" (body verbosity) so RELATIONS carry their members + geometry;
+    # "out tags geom" would strip member lists and silently drop every relation.
+    return "[out:json][timeout:180];\n(\n" + "\n".join(parts) + "\n);\nout geom;"
 
 
 def _load_osm():
@@ -90,12 +92,52 @@ def _osm_rings(data):
         if el.get("type") == "way":
             rings.append(_make_ring(el.get("geometry"), name, "way", el["id"]))
         elif el.get("type") == "relation":
-            for m in el.get("members", []):
-                if m.get("type") == "way" and m.get("role") in ("outer", ""):
-                    rings.append(
-                        _make_ring(m.get("geometry"), name, "relation", el["id"])
-                    )
+            for loop in _relation_outer_loops(el):
+                rings.append(_make_ring(loop, name, "relation", el["id"]))
     return [r for r in rings if r]
+
+
+def _relation_outer_loops(rel):
+    """Stitch a multipolygon relation's outer member ways into closed loops.
+
+    OSM splits a long outer boundary across several ways; only joined
+    end-to-end do they form the ring(s). Without this, each open segment looks
+    like a degenerate sliver. Returns a list of point lists (geometry dicts),
+    one per assembled loop.
+    """
+    segs = [m["geometry"] for m in rel.get("members", [])
+            if m.get("type") == "way" and m.get("role") in ("outer", "")
+            and m.get("geometry")]
+    loops = []
+    used = [False] * len(segs)
+    for i in range(len(segs)):
+        if used[i]:
+            continue
+        used[i] = True
+        loop = list(segs[i])
+        grew = True
+        while grew and _pt(loop[0]) != _pt(loop[-1]):
+            grew = False
+            for j, other in enumerate(segs):
+                if used[j]:
+                    continue
+                if _pt(other[0]) == _pt(loop[-1]):
+                    loop.extend(other[1:])
+                elif _pt(other[-1]) == _pt(loop[-1]):
+                    loop.extend(reversed(other[:-1]))
+                elif _pt(other[-1]) == _pt(loop[0]):
+                    loop[:0] = other[:-1]
+                elif _pt(other[0]) == _pt(loop[0]):
+                    loop[:0] = list(reversed(other[1:]))
+                else:
+                    continue
+                used[j] = grew = True
+        loops.append(loop)
+    return loops
+
+
+def _pt(p):
+    return (p["lat"], p["lon"])
 
 
 def _make_ring(geom, name, otype, oid):
@@ -179,17 +221,23 @@ def _find_match(c, rings):
     """An OSM ring overlapping the City polygon, preferring a same-named one."""
     cnorm = _norm(c["name"])
     best = None
+    name_fallback = None
     for r in rings:
         if not _bbox_overlap(c["bbox"], r["bbox"]):
             continue
+        same_name = bool(cnorm) and _norm(r["name"]) == cnorm
         if _point_in_ring(c["centroid"], r["pts"]) or any(
             _point_in_ring(r["centroid"], outer) for outer in c["outers"]
         ):
-            if cnorm and _norm(r["name"]) == cnorm:
+            if same_name:
                 return r  # exact name match settles it
             if best is None or (r["name"] and not best["name"]):
                 best = r  # otherwise prefer a named ring over an unnamed one
-    return best
+        elif same_name and name_fallback is None:
+            # Centroid tests missed (concave / multipolygon), but a same-named
+            # area overlaps this polygon's bbox -- almost certainly the match.
+            name_fallback = r
+    return best or name_fallback
 
 
 def _gap_feature(c, status, match):
@@ -293,7 +341,10 @@ def _norm(name):
     """
     if not name:
         return ""
-    s = _BOROUGH_SUFFIX.sub("", name.lower().replace("&", " and "))
+    # Delete apostrophes so the City's "St. Andrews" keys the same as OSM's
+    # "St. Andrew's" (rather than splitting into a stray "s" token).
+    s = name.lower().replace("&", " and ").replace("'", "").replace("’", "")
+    s = _BOROUGH_SUFFIX.sub("", s)
     s = re.sub(r"[^a-z0-9]+", " ", s).strip()
     s = re.sub(r"^the\s+", "", s)
     while True:
