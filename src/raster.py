@@ -234,9 +234,16 @@ def _place_labels(features, font, min_poly_px):
 
 
 def _ring_centroid(ring):
-    """Area centroid of a closed ring; falls back to the vertex mean."""
+    """Area centroid of a closed ring; falls back to the vertex mean.
+
+    The ring is translated to a local origin first: global pixel coordinates
+    run into the millions at high zooms, and the raw shoelace cross-products
+    lose all precision to float cancellation on small polygons.
+    """
+    rx, ry = ring[0]
     a = cx = cy = 0.0
     for (x0, y0), (x1, y1) in zip(ring, ring[1:] + ring[:1]):
+        x0, y0, x1, y1 = x0 - rx, y0 - ry, x1 - rx, y1 - ry
         cross = x0 * y1 - x1 * y0
         a += cross
         cx += (x0 + x1) * cross
@@ -244,7 +251,7 @@ def _ring_centroid(ring):
     if abs(a) < 1e-9:
         return (sum(p[0] for p in ring) / len(ring),
                 sum(p[1] for p in ring) / len(ring))
-    return cx / (3 * a), cy / (3 * a)
+    return cx / (3 * a) + rx, cy / (3 * a) + ry
 
 
 def _tiles_touching(bbox, pad=OUTLINE_WIDTH + STROKE_WIDTH):
