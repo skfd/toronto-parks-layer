@@ -4,18 +4,21 @@ Pure Python -- no native dependencies, runs the same on Windows and Linux.
 
 Each polygon is drawn as a translucent green fill (holes respected via a
 per-polygon mask) with a vivid outline in the park's hashed colour (see
-_PALETTE) so the outline and the name label are visually linked. Label
-placement is run once globally per zoom so seam-straddling labels render
-identically in every tile, but the strategy depends on zoom:
+_PALETTE) so the outline and the name label are visually linked. Both the
+colour assignment (_assign_colors) and label placement run once globally per
+zoom, so a seam-straddling outline or label is drawn the same colour and shape
+in every tile. The label strategy depends on zoom:
 
 * Low zooms (< LABEL_SHOW_ALL_MIN_ZOOM): a label renders only once its polygon
   is a visible shape (LABEL_MIN_POLY_PX gate) and only if it does not collide
   with an already-placed label (greedy, largest park first). All such labels
   are centred on the polygon. This keeps city-overview zooms uncluttered.
-* High zooms (>= LABEL_SHOW_ALL_MIN_ZOOM): every named park is labelled, no
-  gate, no collision drop. A big park's name stays centred; a small park's
-  name (largest bbox dimension below LABEL_BELOW_MAX_PX) sits just below the
-  polygon so the text never overhangs the shape.
+* High zooms (>= LABEL_SHOW_ALL_MIN_ZOOM): every named park is labelled, none
+  dropped. A big park's name stays centred; a small park's name (largest bbox
+  dimension below LABEL_BELOW_MAX_PX) sits just below the polygon so the text
+  never overhangs the shape. Labels that would overlap are nudged straight
+  down a line at a time (largest park keeps its spot), so dense parkette
+  clusters stack into readable rows instead of printing on top of each other.
 """
 
 import hashlib
@@ -45,11 +48,21 @@ LABEL_SHOW_ALL_MIN_ZOOM = 15
 LABEL_BELOW_MAX_PX = 60                 # largest bbox dimension, in pixels
 LABEL_BELOW_GAP_PX = 3                  # polygon bottom edge -> top of the text
 
+# Show-all collision resolution: a label that overlaps an already-placed one is
+# pushed straight down until its top clears the conflicting box by this gap.
+# Largest park first, so the bigger park keeps its natural spot.
+LABEL_STACK_GAP_PX = 2                  # vertical gap left between stacked labels
+LABEL_STACK_MAX = 6                     # max nudges before a label is placed anyway
+
 # Gated strategy (low zooms): a name renders once its polygon is a visible
 # shape at this zoom; collision placement (largest parks first) keeps dense
 # parkette clusters readable.
 LABEL_MIN_POLY_PX = 24                  # largest bbox dimension, in pixels
 _GRID_CELL = 128                        # spatial-hash cell for collision lookups
+
+# Colour assignment: two parks whose shapes come within this distance are
+# treated as neighbours and pushed onto different palette slots when possible.
+_COLOR_NEAR_PX = 128
 
 # Park identity is conveyed by colour, as in the sibling addresses layer:
 # hash(park name) -> stable hue shared by the outline and the name label.
@@ -78,33 +91,60 @@ def _park_index(name):
     return idx
 
 
-def _assign_tile_colors(names):
-    """Map each park in this tile to a unique palette colour.
+def _assign_colors(features):
+    """Map every park to one palette colour for the whole zoom.
 
-    Each park's preferred index is its hash mod len(_PALETTE). When two parks
-    in the same tile prefer the same slot, the one with the higher md5 hash
-    keeps the slot and the other shifts to the next free slot. Cross-tile
-    consistency: a park that never collides stays one colour everywhere; one
-    that does, shifts only in tiles where the collision actually occurs.
+    Computed once per zoom rather than per tile, so a park keeps a single
+    colour everywhere: a label or outline that straddles a tile seam is drawn
+    the same colour on both sides instead of switching mid-word.
+
+    Each park prefers its hashed slot (_park_index). Parks are coloured largest
+    first; a park takes its preferred slot unless a nearby already-coloured park
+    (shapes within _COLOR_NEAR_PX) already holds it, in which case it shifts to
+    the next free slot. With only four slots, a park hemmed in by four
+    differently-coloured neighbours keeps its preferred colour.
     """
-    ordered = sorted(
-        (n for n in names if n),
-        key=lambda n: hashlib.md5(n.encode("utf-8")).digest(),
-        reverse=True,
-    )
-    used = set()
+    grid = defaultdict(list)  # cell -> [(bbox, color_idx), ...]
+
+    def cells(x0, y0, x1, y1):
+        for cx in range(int(x0 // _GRID_CELL), int(x1 // _GRID_CELL) + 1):
+            for cy in range(int(y0 // _GRID_CELL), int(y1 // _GRID_CELL) + 1):
+                yield (cx, cy)
+
+    parks = []
+    for name, parts in features:
+        if not name:
+            continue
+        bbox = (min(p[2][0] for p in parts), min(p[2][1] for p in parts),
+                max(p[2][2] for p in parts), max(p[2][3] for p in parts))
+        area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+        parks.append((area, name, bbox))
+
     result = {}
-    for name in ordered:
+    for _area, name, bbox in sorted(
+        parks, key=lambda p: (p[0], p[1]), reverse=True
+    ):
+        if name in result:
+            continue
+        x0, y0, x1, y1 = bbox
+        near = (x0 - _COLOR_NEAR_PX, y0 - _COLOR_NEAR_PX,
+                x1 + _COLOR_NEAR_PX, y1 + _COLOR_NEAR_PX)
+        used = set()
+        for key in cells(*near):
+            for ob, oidx in grid.get(key, ()):
+                if (near[0] < ob[2] and near[2] > ob[0] and
+                        near[1] < ob[3] and near[3] > ob[1]):
+                    used.add(oidx)
         preferred = _park_index(name)
+        idx = preferred
         for offset in range(len(_PALETTE)):
-            idx = (preferred + offset) % len(_PALETTE)
-            if idx not in used:
-                result[name] = _PALETTE[idx]
-                used.add(idx)
+            cand = (preferred + offset) % len(_PALETTE)
+            if cand not in used:
+                idx = cand
                 break
-        else:
-            # More parks in tile than palette slots -- fall back to preferred.
-            result[name] = _PALETTE[preferred]
+        result[name] = _PALETTE[idx]
+        for key in cells(*bbox):
+            grid[key].append((bbox, idx))
     return result
 
 
@@ -132,6 +172,7 @@ def _render_zoom(slim_path, zoom, font):
     labels = (_place_labels(features, font)
               if zoom >= LABEL_SHOW_ALL_MIN_ZOOM
               else _place_labels_gated(features, font))
+    color_map = _assign_colors(features)
     print(f"Raster z{zoom}: {len(features):,} polygons, "
           f"{len(labels):,} labels placed")
 
@@ -155,7 +196,7 @@ def _render_zoom(slim_path, zoom, font):
     written = 0
     for tx, ty in keys:
         img = _render_tile(tx, ty, poly_tiles.get((tx, ty), ()),
-                           label_tiles.get((tx, ty), ()), font)
+                           label_tiles.get((tx, ty), ()), font, color_map)
         if img.getbbox() is None:
             continue  # bbox over-approximation: polygon never entered this tile
         tdir = os.path.join(out_dir, str(tx))
@@ -198,11 +239,34 @@ def _place_labels(features, font):
     centred on the centroid of their largest part. Small parks get it just
     below the polygon so the text never overhangs the shape.
 
+    Labels are placed largest park first against a spatial hash: one that would
+    overlap an already-placed label is nudged straight down (its top clearing
+    the conflict by LABEL_STACK_GAP_PX) until it fits, so adjacent parkettes
+    stack into rows. Nothing is dropped -- after LABEL_STACK_MAX nudges a label
+    is placed where it lands.
+
     Returns [(x, y, name, anchor, box), ...], where anchor is the Pillow text
     anchor and box is the text's pixel extent (used to bucket it into tiles).
     """
     pad = STROKE_WIDTH
-    labels = []
+    grid = defaultdict(list)
+
+    def cells(x0, y0, x1, y1):
+        for cx in range(int(x0 // _GRID_CELL), int(x1 // _GRID_CELL) + 1):
+            for cy in range(int(y0 // _GRID_CELL), int(y1 // _GRID_CELL) + 1):
+                yield (cx, cy)
+
+    def conflict_bottom(box):
+        """Lowest bottom edge among placed labels overlapping box, else None."""
+        x0, y0, x1, y1 = box
+        bottom = None
+        for key in cells(*box):
+            for ox0, oy0, ox1, oy1 in grid.get(key, ()):
+                if x0 < ox1 and x1 > ox0 and y0 < oy1 and y1 > oy0:
+                    bottom = oy1 if bottom is None else max(bottom, oy1)
+        return bottom
+
+    candidates = []
     for name, parts in features:
         if not name:
             continue
@@ -211,14 +275,29 @@ def _place_labels(features, font):
         )
         bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
         w = font.getlength(name)
-        cx, _cy = _ring_centroid(ext)
+        cx, cy = _ring_centroid(ext)
         if max(bw, bh) >= LABEL_BELOW_MAX_PX:
-            x, y, anchor = cx, _cy, "mm"
-            top = y - FONT_SIZE / 2
+            x, y, anchor, top = cx, cy, "mm", cy - FONT_SIZE / 2
         else:
-            x, y, anchor = cx, bbox[3] + LABEL_BELOW_GAP_PX, "ma"
-            top = y
-        box = (x - w / 2 - pad, top - pad, x + w / 2 + pad, top + FONT_SIZE + pad)
+            top = bbox[3] + LABEL_BELOW_GAP_PX
+            x, y, anchor = cx, top, "ma"
+        candidates.append((bw * bh, x, y, top, w, name, anchor))
+
+    labels = []
+    for _area, x, y, top, w, name, anchor in sorted(
+        candidates, key=lambda c: (c[0], c[1]), reverse=True
+    ):
+        for _ in range(LABEL_STACK_MAX + 1):
+            box = (x - w / 2 - pad, top - pad,
+                   x + w / 2 + pad, top + FONT_SIZE + pad)
+            bottom = conflict_bottom(box)
+            if bottom is None:
+                break
+            new_top = bottom + LABEL_STACK_GAP_PX + pad
+            y += new_top - top
+            top = new_top
+        for key in cells(*box):
+            grid[key].append(box)
         labels.append((x, y, name, anchor, box))
     return labels
 
@@ -303,17 +382,13 @@ def _tiles_touching(bbox, pad=OUTLINE_WIDTH + STROKE_WIDTH):
             yield (tx, ty)
 
 
-def _render_tile(tx, ty, polys, labels, font):
+def _render_tile(tx, ty, polys, labels, font, color_map):
     img = Image.new("RGBA", (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     ox, oy = tx * TILE_SIZE, ty * TILE_SIZE
 
     def local(ring):
         return [(x - ox, y - oy) for x, y in ring]
-
-    color_map = _assign_tile_colors(
-        {name for name, _, _ in polys} | {name for _, _, name, _ in labels}
-    )
 
     # Fills first (via a mask so holes stay clear), then all outlines on top.
     for _name, ext, holes in polys:
