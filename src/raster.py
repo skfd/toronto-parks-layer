@@ -34,6 +34,8 @@ STROKE_WIDTH = 1                       # white halo width, in pixels
 # A name renders once its polygon is a visible shape at this zoom -- the text
 # may overhang a small polygon, it just has to sit on/next to it. Collision
 # placement (largest parks first) keeps dense parkette clusters readable.
+# At the TOP raster zoom the gate is dropped: it is the last chance to label
+# (editors only overzoom past it), so every named park gets a label there.
 LABEL_MIN_POLY_PX = 24                 # largest bbox dimension, in pixels
 
 # Spatial-hash cell size for label collision lookups.
@@ -110,14 +112,19 @@ def build_raster(slim_path=None):
     """
     slim_path = slim_path or config.SLIM_PATH
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
-    return {z: _render_zoom(slim_path, z, font) for z in config.RASTER_ZOOMS}
+    top = max(config.RASTER_ZOOMS)
+    return {
+        z: _render_zoom(slim_path, z, font,
+                        0 if z == top else LABEL_MIN_POLY_PX)
+        for z in config.RASTER_ZOOMS
+    }
 
 
-def _render_zoom(slim_path, zoom, font):
+def _render_zoom(slim_path, zoom, font, min_poly_px):
     print(f"Raster z{zoom}: projecting polygons ...")
     features = _read_features(slim_path, zoom)
 
-    labels = _place_labels(features, font)
+    labels = _place_labels(features, font, min_poly_px)
     print(f"Raster z{zoom}: {len(features):,} polygons, "
           f"{len(labels):,} labels placed")
 
@@ -177,7 +184,7 @@ def _read_features(slim_path, zoom):
     return features
 
 
-def _place_labels(features, font):
+def _place_labels(features, font, min_poly_px):
     """Place one label per named park at the centroid of its largest part.
 
     Greedy, largest-polygon-first, against a spatial hash; a label whose
@@ -207,7 +214,7 @@ def _place_labels(features, font):
             parts, key=lambda p: (p[2][2] - p[2][0]) * (p[2][3] - p[2][1])
         )
         bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        if max(bw, bh) < LABEL_MIN_POLY_PX:
+        if max(bw, bh) < min_poly_px:
             continue
         w = font.getlength(name)
         cx, cy = _ring_centroid(ext)

@@ -23,7 +23,7 @@ its page redirects to Green Spaces.)
   tied to it. A readable backdrop for JOSM. A name only renders once
   the polygon is a visible shape on screen (the text may overhang small
   polygons), so big parks are labelled from city zoom and small parkettes only
-  when zoomed in.
+  when zoomed in; at the top raster zoom every named park is labelled.
 - A **landing page** with copy-paste "add this layer" instructions for both
   editors.
 
