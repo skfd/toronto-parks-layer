@@ -17,10 +17,13 @@ its page redirects to Green Spaces.)
 
 - **Vector tiles** (MVT) &mdash; interactive in iD; click a polygon to read its
   `name`, `class` and `area_id` tags.
-- **Raster tiles** (PNG) &mdash; translucent green fills with magenta outlines
-  and park-name labels; a readable backdrop for JOSM. A name only renders once
-  the polygon is big enough on screen to fit it, so big parks are labelled from
-  city zoom and small parkettes only when zoomed in.
+- **Raster tiles** (PNG) &mdash; translucent green fills with park-name labels;
+  each park's outline and label share a stable hashed colour (as in the
+  addresses layer) so a name overhanging a small polygon is still visually
+  tied to it. A readable backdrop for JOSM. A name only renders once
+  the polygon is a visible shape on screen (the text may overhang small
+  polygons), so big parks are labelled from city zoom and small parkettes only
+  when zoomed in.
 - A **landing page** with copy-paste "add this layer" instructions for both
   editors.
 

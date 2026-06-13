@@ -3,14 +3,18 @@
 Pure Python -- no native dependencies, runs the same on Windows and Linux.
 
 Each polygon is drawn as a translucent green fill (holes respected via a
-per-polygon mask) with a vivid magenta outline that stays visible over aerial
-imagery. One name label per park is placed at the centroid of its largest
-part, but only when the name fits the polygon at that zoom -- so big parks
-are labelled from low zooms and small parkettes only when zoomed in. Label
+per-polygon mask) with a vivid outline in the park's hashed colour (see
+_PALETTE) so the outline and the name label are visually linked even when a
+label overhangs a small polygon. One name label per park is placed at the
+centroid of its largest
+part once the polygon is a visible shape at that zoom (the text may overhang
+small polygons) -- so big parks are labelled from low zooms and small
+parkettes only when zoomed in. Label
 placement is run once globally per zoom (greedy, area-descending, against a
 spatial hash) so seam-straddling labels render identically in every tile.
 """
 
+import hashlib
 import json
 import os
 from collections import defaultdict
@@ -20,21 +24,83 @@ from PIL import Image, ImageDraw, ImageFont
 from src import config
 from src.tilemath import TILE_SIZE, lonlat_to_pixel
 
-FILL_COLOR = (76, 175, 80, 60)         # translucent green
-OUTLINE_COLOR = (224, 33, 138, 255)    # magenta -- visible over aerial imagery
+FILL_COLOR = (76, 175, 80, 60)         # translucent green, uniform for all parks
 OUTLINE_WIDTH = 2
-LABEL_COLOR = (27, 94, 32, 255)        # dark green
 HALO_COLOR = (255, 255, 255, 235)
 FONT_PATH = os.path.join(config.ASSETS_DIR, "font", "DejaVuSans-Bold.ttf")
 FONT_SIZE = 11
 STROKE_WIDTH = 1                       # white halo width, in pixels
 
-# A name renders only when it fits its polygon's bounding box at this zoom.
-LABEL_MAX_WIDTH_RATIO = 1.15           # text may slightly overhang the bbox
-LABEL_MIN_BBOX_HEIGHT = FONT_SIZE + 4
+# A name renders once its polygon is a visible shape at this zoom -- the text
+# may overhang a small polygon, it just has to sit on/next to it. Collision
+# placement (largest parks first) keeps dense parkette clusters readable.
+LABEL_MIN_POLY_PX = 24                 # largest bbox dimension, in pixels
 
 # Spatial-hash cell size for label collision lookups.
 _GRID_CELL = 128
+
+# Park identity is conveyed by colour, as in the sibling addresses layer:
+# hash(park name) -> stable hue shared by the outline and the name label.
+# Reduced palette: every hue must stay visible over tree canopy on aerial
+# imagery, so the addresses layer's green/teal/brown entries are dropped.
+# All pass WCAG AA (>=4.5:1) against the white halo.
+_PALETTE = (
+    (194,  24,  91, 255),   # pink
+    (123,  31, 162, 255),   # purple
+    ( 25, 118, 210, 255),   # blue
+    (211,  47,  47, 255),   # red
+)
+_FALLBACK_COLOR = (66, 66, 66, 255)    # neutral grey when a name is missing
+
+_index_cache = {}
+
+
+def _park_index(name):
+    """Stable preferred palette index for a park name."""
+    cached = _index_cache.get(name)
+    if cached is not None:
+        return cached
+    h = int.from_bytes(hashlib.md5(name.encode("utf-8")).digest()[:4], "big")
+    idx = h % len(_PALETTE)
+    _index_cache[name] = idx
+    return idx
+
+
+def _assign_tile_colors(names):
+    """Map each park in this tile to a unique palette colour.
+
+    Each park's preferred index is its hash mod len(_PALETTE). When two parks
+    in the same tile prefer the same slot, the one with the higher md5 hash
+    keeps the slot and the other shifts to the next free slot. Cross-tile
+    consistency: a park that never collides stays one colour everywhere; one
+    that does, shifts only in tiles where the collision actually occurs.
+    """
+    ordered = sorted(
+        (n for n in names if n),
+        key=lambda n: hashlib.md5(n.encode("utf-8")).digest(),
+        reverse=True,
+    )
+    used = set()
+    result = {}
+    for name in ordered:
+        preferred = _park_index(name)
+        for offset in range(len(_PALETTE)):
+            idx = (preferred + offset) % len(_PALETTE)
+            if idx not in used:
+                result[name] = _PALETTE[idx]
+                used.add(idx)
+                break
+        else:
+            # More parks in tile than palette slots -- fall back to preferred.
+            result[name] = _PALETTE[preferred]
+    return result
+
+
+def _color_of(color_map, name):
+    """Look up the tile-local colour for a park, with grey fallback."""
+    if not name:
+        return _FALLBACK_COLOR
+    return color_map.get(name, _FALLBACK_COLOR)
 
 
 def build_raster(slim_path=None):
@@ -57,10 +123,10 @@ def _render_zoom(slim_path, zoom, font):
 
     print(f"Raster z{zoom}: bucketing into tiles ...")
     poly_tiles = defaultdict(list)
-    for _name, parts in features:
+    for name, parts in features:
         for ext, holes, bbox in parts:
             for key in _tiles_touching(bbox):
-                poly_tiles[key].append((ext, holes))
+                poly_tiles[key].append((name, ext, holes))
 
     label_tiles = defaultdict(list)
     for x, y, name, bbox in labels:
@@ -114,9 +180,9 @@ def _read_features(slim_path, zoom):
 def _place_labels(features, font):
     """Place one label per named park at the centroid of its largest part.
 
-    Greedy, largest-polygon-first, against a spatial hash; a label that does
-    not fit its polygon at this zoom, or collides with an already-placed
-    label, is dropped. Returns [(x, y, name, bbox), ...].
+    Greedy, largest-polygon-first, against a spatial hash; a label whose
+    polygon is still too small to see at this zoom, or that collides with an
+    already-placed label, is dropped. Returns [(x, y, name, bbox), ...].
     """
     grid = defaultdict(list)
 
@@ -141,9 +207,9 @@ def _place_labels(features, font):
             parts, key=lambda p: (p[2][2] - p[2][0]) * (p[2][3] - p[2][1])
         )
         bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        w = font.getlength(name)
-        if w > bw * LABEL_MAX_WIDTH_RATIO or bh < LABEL_MIN_BBOX_HEIGHT:
+        if max(bw, bh) < LABEL_MIN_POLY_PX:
             continue
+        w = font.getlength(name)
         cx, cy = _ring_centroid(ext)
         candidates.append((bw * bh, cx, cy, name, w))
 
@@ -189,8 +255,12 @@ def _render_tile(tx, ty, polys, labels, font):
     def local(ring):
         return [(x - ox, y - oy) for x, y in ring]
 
+    color_map = _assign_tile_colors(
+        {name for name, _, _ in polys} | {name for _, _, name in labels}
+    )
+
     # Fills first (via a mask so holes stay clear), then all outlines on top.
-    for ext, holes in polys:
+    for _name, ext, holes in polys:
         mask = Image.new("L", (TILE_SIZE, TILE_SIZE), 0)
         mdraw = ImageDraw.Draw(mask)
         mdraw.polygon(local(ext), fill=255)
@@ -198,14 +268,15 @@ def _render_tile(tx, ty, polys, labels, font):
             mdraw.polygon(local(hole), fill=0)
         img.paste(FILL_COLOR, (0, 0), mask)
 
-    for ext, holes in polys:
+    for name, ext, holes in polys:
         for ring in (ext, *holes):
             pts = local(ring)
-            draw.line(pts + pts[:1], fill=OUTLINE_COLOR, width=OUTLINE_WIDTH)
+            draw.line(pts + pts[:1], fill=_color_of(color_map, name),
+                      width=OUTLINE_WIDTH)
 
     for x, y, name in labels:
         draw.text(
-            (x - ox, y - oy), name, font=font, fill=LABEL_COLOR,
+            (x - ox, y - oy), name, font=font, fill=_color_of(color_map, name),
             stroke_width=STROKE_WIDTH, stroke_fill=HALO_COLOR, anchor="mm",
         )
 
