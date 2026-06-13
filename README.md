@@ -44,6 +44,11 @@ islands, road slivers, boulevards, hydro corridors, building grounds and the
 generic administrative `OTHER_*` classes are dropped. Names are converted from
 the City's ALL CAPS to title case.
 
+The numbered `TRCA LANDS (  n)` parcels are kept out of the rendered tile layer
+(they are conservation-authority land, not real named parks). The slim step
+writes them to `parks-slim.geojsonl` but not to `parks-layer.geojsonl`, so the
+gap-review page still tracks them while the tiles do not.
+
 ## Setup
 
 1. Install Python dependencies:

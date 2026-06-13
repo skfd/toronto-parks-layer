@@ -3,8 +3,10 @@
 The source file is a ~21 MB GeoJSON FeatureCollection; it is parsed as a
 stream with ijson for consistency with the sibling projects. Only park-ish
 AREA_CLASS values are kept (see config.INCLUDE_AREA_CLASSES); the all-caps
-city names are converted to title case. The slim output (one compact Feature
-per line) is the shared input to both tile builders.
+city names are converted to title case. Two outputs are written, one compact
+Feature per line: parks-slim.geojsonl (everything kept, used by the gap tool)
+and parks-layer.geojsonl (same minus numbered TRCA Lands parcels, the input to
+both tile builders).
 """
 
 import json
@@ -30,9 +32,11 @@ def slim(src_path):
     os.makedirs(config.DATA_DIR, exist_ok=True)
 
     count = 0
+    layer_count = 0
     skipped = 0
     with open(src_path, "rb") as src, \
-            open(config.SLIM_PATH, "w", encoding="utf-8") as out:
+            open(config.SLIM_PATH, "w", encoding="utf-8") as out, \
+            open(config.LAYER_SLIM_PATH, "w", encoding="utf-8") as layer_out:
         for feature in ijson.items(src, "features.item"):
             props_in = feature.get("properties") or {}
             if props_in.get(config.CLASS_KEY) not in config.INCLUDE_AREA_CLASSES:
@@ -52,28 +56,41 @@ def slim(src_path):
             if area_id is not None:
                 props_out["area_id"] = int(area_id)
 
-            out.write(json.dumps({
+            line = json.dumps({
                 "type": "Feature",
                 "geometry": {
                     "type": geom["type"],
                     "coordinates": _plain(geom["coordinates"]),
                 },
                 "properties": props_out,
-            }) + "\n")
+            }) + "\n"
+            out.write(line)
             count += 1
+            if not is_trca_lands(name):
+                layer_out.write(line)
+                layer_count += 1
             if count % 500 == 0:
                 print(f"  {count:,} features ...")
 
+    # The landing page counts the parks actually rendered, so it excludes TRCA.
     with open(config.COUNT_PATH, "w", encoding="utf-8") as f:
-        f.write(str(count))
+        f.write(str(layer_count))
 
-    print(f"Done: {config.SLIM_PATH} ({count:,} features, {skipped:,} skipped)")
+    print(f"Done: {config.SLIM_PATH} ({count:,} features, {skipped:,} skipped); "
+          f"{config.LAYER_SLIM_PATH} ({layer_count:,} layer features)")
     if not MIN_EXPECTED <= count <= MAX_EXPECTED:
         raise RuntimeError(
             f"Slim feature count {count:,} is outside the expected range "
             f"{MIN_EXPECTED:,}-{MAX_EXPECTED:,} -- aborting."
         )
     return config.SLIM_PATH
+
+
+def is_trca_lands(name):
+    """A numbered "TRCA LANDS (  n)" parcel -- city-tracked TRCA land, not a real
+    named park, so it is kept out of the rendered tile layer (the gap tool still
+    sees it via the full slim file)."""
+    return bool(name) and str(name).strip().upper().startswith("TRCA LANDS")
 
 
 def title_case(name):

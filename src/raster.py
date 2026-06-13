@@ -160,7 +160,7 @@ def build_raster(slim_path=None):
 
     Returns a dict {zoom: tile_count}.
     """
-    slim_path = slim_path or config.SLIM_PATH
+    slim_path = slim_path or config.LAYER_SLIM_PATH
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
     return {z: _render_zoom(slim_path, z, font) for z in config.RASTER_ZOOMS}
 

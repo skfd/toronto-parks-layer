@@ -18,6 +18,9 @@ LOGS_DIR = os.path.join(PROJECT_DIR, "logs")
 
 MBTILES_PATH = os.path.join(BUILD_DIR, "parks.mbtiles")
 SLIM_PATH = os.path.join(DATA_DIR, "parks-slim.geojsonl")
+# Same as SLIM_PATH but without the numbered "TRCA LANDS" parcels: the rendered
+# tile layer reads this, the gap tool keeps reading the full SLIM_PATH.
+LAYER_SLIM_PATH = os.path.join(DATA_DIR, "parks-layer.geojsonl")
 COUNT_PATH = os.path.join(DATA_DIR, "parks.count")
 LAST_DOWNLOAD_PATH = os.path.join(DATA_DIR, ".last-download.json")
 

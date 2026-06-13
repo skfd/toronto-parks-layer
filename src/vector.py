@@ -20,7 +20,7 @@ def build_vector(slim_path=None):
 
     Returns the number of .pbf files produced.
     """
-    slim_path = slim_path or config.SLIM_PATH
+    slim_path = slim_path or config.LAYER_SLIM_PATH
     if not os.path.isfile(slim_path):
         raise RuntimeError(f"Slim GeoJSONL not found: {slim_path}. Run 'slim' first.")
     os.makedirs(config.BUILD_DIR, exist_ok=True)
