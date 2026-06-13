@@ -4,14 +4,18 @@ Pure Python -- no native dependencies, runs the same on Windows and Linux.
 
 Each polygon is drawn as a translucent green fill (holes respected via a
 per-polygon mask) with a vivid outline in the park's hashed colour (see
-_PALETTE) so the outline and the name label are visually linked even when a
-label overhangs a small polygon. One name label per park is placed at the
-centroid of its largest
-part once the polygon is a visible shape at that zoom (the text may overhang
-small polygons) -- so big parks are labelled from low zooms and small
-parkettes only when zoomed in. Label
-placement is run once globally per zoom (greedy, area-descending, against a
-spatial hash) so seam-straddling labels render identically in every tile.
+_PALETTE) so the outline and the name label are visually linked. Label
+placement is run once globally per zoom so seam-straddling labels render
+identically in every tile, but the strategy depends on zoom:
+
+* Low zooms (< LABEL_SHOW_ALL_MIN_ZOOM): a label renders only once its polygon
+  is a visible shape (LABEL_MIN_POLY_PX gate) and only if it does not collide
+  with an already-placed label (greedy, largest park first). All such labels
+  are centred on the polygon. This keeps city-overview zooms uncluttered.
+* High zooms (>= LABEL_SHOW_ALL_MIN_ZOOM): every named park is labelled, no
+  gate, no collision drop. A big park's name stays centred; a small park's
+  name (largest bbox dimension below LABEL_BELOW_MAX_PX) sits just below the
+  polygon so the text never overhangs the shape.
 """
 
 import hashlib
@@ -31,15 +35,21 @@ FONT_PATH = os.path.join(config.ASSETS_DIR, "font", "DejaVuSans-Bold.ttf")
 FONT_SIZE = 11
 STROKE_WIDTH = 1                       # white halo width, in pixels
 
-# A name renders once its polygon is a visible shape at this zoom -- the text
-# may overhang a small polygon, it just has to sit on/next to it. Collision
-# placement (largest parks first) keeps dense parkette clusters readable.
-# At the TOP raster zoom the gate is dropped: it is the last chance to label
-# (editors only overzoom past it), so every named park gets a label there.
-LABEL_MIN_POLY_PX = 24                 # largest bbox dimension, in pixels
+# At this zoom and above, switch from the gated/collision strategy to the
+# show-all strategy (every named park labelled; small parks labelled below).
+LABEL_SHOW_ALL_MIN_ZOOM = 15
 
-# Spatial-hash cell size for label collision lookups.
-_GRID_CELL = 128
+# Show-all strategy: a park whose largest bbox dimension is below this (at the
+# current zoom) is "small": its name is placed just below the polygon so the
+# text never overhangs the shape. Larger parks keep the centred label.
+LABEL_BELOW_MAX_PX = 60                 # largest bbox dimension, in pixels
+LABEL_BELOW_GAP_PX = 3                  # polygon bottom edge -> top of the text
+
+# Gated strategy (low zooms): a name renders once its polygon is a visible
+# shape at this zoom; collision placement (largest parks first) keeps dense
+# parkette clusters readable.
+LABEL_MIN_POLY_PX = 24                  # largest bbox dimension, in pixels
+_GRID_CELL = 128                        # spatial-hash cell for collision lookups
 
 # Park identity is conveyed by colour, as in the sibling addresses layer:
 # hash(park name) -> stable hue shared by the outline and the name label.
@@ -112,19 +122,16 @@ def build_raster(slim_path=None):
     """
     slim_path = slim_path or config.SLIM_PATH
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
-    top = max(config.RASTER_ZOOMS)
-    return {
-        z: _render_zoom(slim_path, z, font,
-                        0 if z == top else LABEL_MIN_POLY_PX)
-        for z in config.RASTER_ZOOMS
-    }
+    return {z: _render_zoom(slim_path, z, font) for z in config.RASTER_ZOOMS}
 
 
-def _render_zoom(slim_path, zoom, font, min_poly_px):
+def _render_zoom(slim_path, zoom, font):
     print(f"Raster z{zoom}: projecting polygons ...")
     features = _read_features(slim_path, zoom)
 
-    labels = _place_labels(features, font, min_poly_px)
+    labels = (_place_labels(features, font)
+              if zoom >= LABEL_SHOW_ALL_MIN_ZOOM
+              else _place_labels_gated(features, font))
     print(f"Raster z{zoom}: {len(features):,} polygons, "
           f"{len(labels):,} labels placed")
 
@@ -136,9 +143,9 @@ def _render_zoom(slim_path, zoom, font, min_poly_px):
                 poly_tiles[key].append((name, ext, holes))
 
     label_tiles = defaultdict(list)
-    for x, y, name, bbox in labels:
-        for key in _tiles_touching(bbox):
-            label_tiles[key].append((x, y, name))
+    for x, y, name, anchor, box in labels:
+        for key in _tiles_touching(box):
+            label_tiles[key].append((x, y, name, anchor))
 
     out_dir = os.path.join(config.RASTER_TILE_DIR, str(zoom))
     keys = set(poly_tiles) | set(label_tiles)
@@ -184,12 +191,47 @@ def _read_features(slim_path, zoom):
     return features
 
 
-def _place_labels(features, font, min_poly_px):
-    """Place one label per named park at the centroid of its largest part.
+def _place_labels(features, font):
+    """High-zoom strategy: label every named park, none dropped.
 
-    Greedy, largest-polygon-first, against a spatial hash; a label whose
-    polygon is still too small to see at this zoom, or that collides with an
-    already-placed label, is dropped. Returns [(x, y, name, bbox), ...].
+    Big parks (largest bbox dimension >= LABEL_BELOW_MAX_PX) get the name
+    centred on the centroid of their largest part. Small parks get it just
+    below the polygon so the text never overhangs the shape.
+
+    Returns [(x, y, name, anchor, box), ...], where anchor is the Pillow text
+    anchor and box is the text's pixel extent (used to bucket it into tiles).
+    """
+    pad = STROKE_WIDTH
+    labels = []
+    for name, parts in features:
+        if not name:
+            continue
+        ext, _holes, bbox = max(
+            parts, key=lambda p: (p[2][2] - p[2][0]) * (p[2][3] - p[2][1])
+        )
+        bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        w = font.getlength(name)
+        cx, _cy = _ring_centroid(ext)
+        if max(bw, bh) >= LABEL_BELOW_MAX_PX:
+            x, y, anchor = cx, _cy, "mm"
+            top = y - FONT_SIZE / 2
+        else:
+            x, y, anchor = cx, bbox[3] + LABEL_BELOW_GAP_PX, "ma"
+            top = y
+        box = (x - w / 2 - pad, top - pad, x + w / 2 + pad, top + FONT_SIZE + pad)
+        labels.append((x, y, name, anchor, box))
+    return labels
+
+
+def _place_labels_gated(features, font):
+    """Low-zoom strategy: one centred label per visible, non-colliding park.
+
+    A label whose polygon is still too small to see at this zoom
+    (LABEL_MIN_POLY_PX), or that collides with an already-placed label, is
+    dropped. Greedy, largest park first, against a spatial hash so seam-
+    straddling labels render identically in every tile.
+
+    Returns [(x, y, name, anchor, box), ...]; anchor is always "mm" (centred).
     """
     grid = defaultdict(list)
 
@@ -214,7 +256,7 @@ def _place_labels(features, font, min_poly_px):
             parts, key=lambda p: (p[2][2] - p[2][0]) * (p[2][3] - p[2][1])
         )
         bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        if max(bw, bh) < min_poly_px:
+        if max(bw, bh) < LABEL_MIN_POLY_PX:
             continue
         w = font.getlength(name)
         cx, cy = _ring_centroid(ext)
@@ -229,7 +271,7 @@ def _place_labels(features, font, min_poly_px):
             continue
         for key in cells(*box):
             grid[key].append(box)
-        labels.append((cx, cy, name, box))
+        labels.append((cx, cy, name, "mm", box))
     return labels
 
 
@@ -270,7 +312,7 @@ def _render_tile(tx, ty, polys, labels, font):
         return [(x - ox, y - oy) for x, y in ring]
 
     color_map = _assign_tile_colors(
-        {name for name, _, _ in polys} | {name for _, _, name in labels}
+        {name for name, _, _ in polys} | {name for _, _, name, _ in labels}
     )
 
     # Fills first (via a mask so holes stay clear), then all outlines on top.
@@ -288,10 +330,10 @@ def _render_tile(tx, ty, polys, labels, font):
             draw.line(pts + pts[:1], fill=_color_of(color_map, name),
                       width=OUTLINE_WIDTH)
 
-    for x, y, name in labels:
+    for x, y, name, anchor in labels:
         draw.text(
             (x - ox, y - oy), name, font=font, fill=_color_of(color_map, name),
-            stroke_width=STROKE_WIDTH, stroke_fill=HALO_COLOR, anchor="mm",
+            stroke_width=STROKE_WIDTH, stroke_fill=HALO_COLOR, anchor=anchor,
         )
 
     return img
