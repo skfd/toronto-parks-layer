@@ -26,7 +26,8 @@ its page redirects to Green Spaces.)
   when zoomed in; at the top raster zoom every named park is labelled.
 - A **landing page** with copy-paste "add this layer" instructions for both
   editors.
-- A **gap-review page** (`/gaps/`) that compares the City polygons against
+- A **gap-review page** ([`/gaps/`](https://skfd.github.io/toronto-parks-layer/gaps/))
+  that compares the City polygons against
   park areas already in OpenStreetMap and lists the gaps &mdash; City parks with
   no overlapping OSM area ("missing") and matched parks whose OSM name differs
   ("mismatch") &mdash; on an interactive map and a filterable table. OSM areas
