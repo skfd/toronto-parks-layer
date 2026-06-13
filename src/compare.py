@@ -5,8 +5,10 @@ each kept City polygon checks whether an OSM area overlaps it. The result is
 written to data/gaps.geojson:
 
   * "missing"  -- no OSM park area overlaps the City polygon (add it to OSM);
-  * "mismatch" -- one overlaps, but the OSM name differs from the City name
-                  (or the OSM area is unnamed).
+  * "mismatch" -- one overlaps, but its (present) OSM name differs;
+  * "unnamed"  -- one overlaps but the OSM area has no name (add one);
+  * "trca"     -- a numbered TRCA Lands parcel that is any of the above; these
+                  are not real park names, so they get their own category.
 
 Overlap is tested with pure-Python centroid-in-polygon checks (both
 directions) after a bounding-box prefilter -- enough for a review tool, no GIS
@@ -29,18 +31,16 @@ def compare():
     city = list(_city_features())
     print(f"City polygons:       {len(city):,}")
 
-    gaps, n_missing, n_mismatch = _match(city, rings)
+    gaps, counts = _match(city, rings)
     _write_gaps(gaps)
 
-    summary = {
-        "osm_rings": len(rings),
-        "city": len(city),
-        "missing": n_missing,
-        "mismatch": n_mismatch,
-    }
+    summary = {"osm_rings": len(rings), "city": len(city), **counts}
     with open(config.GAPS_COUNT_PATH, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
-    print(f"Gaps: {n_missing:,} missing in OSM, {n_mismatch:,} name mismatches")
+    print(
+        f"Gaps: {counts['missing']:,} missing, {counts['mismatch']:,} mismatch, "
+        f"{counts['unnamed']:,} unnamed OSM, {counts['trca']:,} TRCA"
+    )
     return summary
 
 
@@ -152,16 +152,27 @@ def _outer_rings(geom):
 
 def _match(city, rings):
     gaps = []
-    n_missing = n_mismatch = 0
+    counts = {"missing": 0, "mismatch": 0, "unnamed": 0, "trca": 0}
     for c in city:
         match = _find_match(c, rings)
         if match is None:
-            gaps.append(_gap_feature(c, "missing", None))
-            n_missing += 1
+            status = "missing"
+        elif not match["name"]:
+            status = "unnamed"
         elif _norm(match["name"]) != _norm(c["name"]):
-            gaps.append(_gap_feature(c, "mismatch", match))
-            n_mismatch += 1
-    return gaps, n_missing, n_mismatch
+            status = "mismatch"
+        else:
+            continue  # an OSM area with the same name overlaps -- not a gap
+        if _is_trca(c["name"]):
+            status = "trca"
+        gaps.append(_gap_feature(c, status, match))
+        counts[status] += 1
+    return gaps, counts
+
+
+def _is_trca(name):
+    """Numbered TRCA Lands parcel ("Trca Lands ( 39)") -- not a real park name."""
+    return _norm(name).startswith("trca lands")
 
 
 def _find_match(c, rings):
@@ -188,7 +199,7 @@ def _gap_feature(c, status, match):
         "status": status,
         "area_id": c["area_id"],
     }
-    if status == "mismatch" and match:
+    if match:
         props["osm_name"] = match["name"]
         props["osm_url"] = (
             f"https://www.openstreetmap.org/{match['otype']}/{match['oid']}"
@@ -261,11 +272,35 @@ def _point_in_ring(pt, pts):
     return inside
 
 
+# The City appends a borough to disambiguate duplicate names ("Oriole Park -
+# Toronto"); OSM never does. Longer borough names first so they win the match.
+_BOROUGH_SUFFIX = re.compile(
+    r"\s+-\s+(north york|east york|toronto|etobicoke|scarborough|york)\s*$"
+)
+# Generic feature words the City and OSM disagree on appending ("Sugar Beach"
+# vs "Sugar Beach Park", "St. James Cemetery" vs "... Cemetery and Crematorium").
+_GENERIC_SUFFIX = re.compile(r"\s+(?:and\s+)?(?:park|cemetery|crematorium|club)$")
+
+
 def _norm(name):
-    """Loose name key: lowercase, alphanumerics only, single-spaced."""
+    """Loose match key: drop the artefacts City and OSM names differ on.
+
+    Lowercases and reduces to single-spaced alphanumerics, and additionally
+    strips the City's " - <Borough>" suffix, unifies "&"/"and", drops a leading
+    article, and trims generic trailing feature words -- so spatially matched
+    parks aren't flagged as mismatches over naming convention alone. Affects
+    matching only; the displayed name keeps the raw City data.
+    """
     if not name:
         return ""
-    return re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+    s = _BOROUGH_SUFFIX.sub("", name.lower().replace("&", " and "))
+    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    s = re.sub(r"^the\s+", "", s)
+    while True:
+        trimmed = _GENERIC_SUFFIX.sub("", s).strip()
+        if trimmed == s:
+            return s
+        s = trimmed or s  # keep the last word if the name is only generic words
 
 
 def _round_geom(geom):
