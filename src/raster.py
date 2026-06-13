@@ -1,0 +1,212 @@
+"""Render park polygons into raster (PNG) map tiles using Pillow.
+
+Pure Python -- no native dependencies, runs the same on Windows and Linux.
+
+Each polygon is drawn as a translucent green fill (holes respected via a
+per-polygon mask) with a vivid magenta outline that stays visible over aerial
+imagery. One name label per park is placed at the centroid of its largest
+part, but only when the name fits the polygon at that zoom -- so big parks
+are labelled from low zooms and small parkettes only when zoomed in. Label
+placement is run once globally per zoom (greedy, area-descending, against a
+spatial hash) so seam-straddling labels render identically in every tile.
+"""
+
+import json
+import os
+from collections import defaultdict
+
+from PIL import Image, ImageDraw, ImageFont
+
+from src import config
+from src.tilemath import TILE_SIZE, lonlat_to_pixel
+
+FILL_COLOR = (76, 175, 80, 60)         # translucent green
+OUTLINE_COLOR = (224, 33, 138, 255)    # magenta -- visible over aerial imagery
+OUTLINE_WIDTH = 2
+LABEL_COLOR = (27, 94, 32, 255)        # dark green
+HALO_COLOR = (255, 255, 255, 235)
+FONT_PATH = os.path.join(config.ASSETS_DIR, "font", "DejaVuSans-Bold.ttf")
+FONT_SIZE = 11
+STROKE_WIDTH = 1                       # white halo width, in pixels
+
+# A name renders only when it fits its polygon's bounding box at this zoom.
+LABEL_MAX_WIDTH_RATIO = 1.15           # text may slightly overhang the bbox
+LABEL_MIN_BBOX_HEIGHT = FONT_SIZE + 4
+
+# Spatial-hash cell size for label collision lookups.
+_GRID_CELL = 128
+
+
+def build_raster(slim_path=None):
+    """Render PNG tiles for every zoom in config.RASTER_ZOOMS.
+
+    Returns a dict {zoom: tile_count}.
+    """
+    slim_path = slim_path or config.SLIM_PATH
+    font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
+    return {z: _render_zoom(slim_path, z, font) for z in config.RASTER_ZOOMS}
+
+
+def _render_zoom(slim_path, zoom, font):
+    print(f"Raster z{zoom}: projecting polygons ...")
+    features = _read_features(slim_path, zoom)
+
+    labels = _place_labels(features, font)
+    print(f"Raster z{zoom}: {len(features):,} polygons, "
+          f"{len(labels):,} labels placed")
+
+    print(f"Raster z{zoom}: bucketing into tiles ...")
+    poly_tiles = defaultdict(list)
+    for _name, parts in features:
+        for ext, holes, bbox in parts:
+            for key in _tiles_touching(bbox):
+                poly_tiles[key].append((ext, holes))
+
+    label_tiles = defaultdict(list)
+    for x, y, name, bbox in labels:
+        for key in _tiles_touching(bbox):
+            label_tiles[key].append((x, y, name))
+
+    out_dir = os.path.join(config.RASTER_TILE_DIR, str(zoom))
+    keys = set(poly_tiles) | set(label_tiles)
+    print(f"Raster z{zoom}: rendering {len(keys):,} tiles ...")
+
+    made_dirs = set()
+    written = 0
+    for tx, ty in keys:
+        img = _render_tile(tx, ty, poly_tiles.get((tx, ty), ()),
+                           label_tiles.get((tx, ty), ()), font)
+        if img.getbbox() is None:
+            continue  # bbox over-approximation: polygon never entered this tile
+        tdir = os.path.join(out_dir, str(tx))
+        if tdir not in made_dirs:
+            os.makedirs(tdir, exist_ok=True)
+            made_dirs.add(tdir)
+        img.save(os.path.join(tdir, f"{ty}.png"), optimize=True)
+        written += 1
+    return written
+
+
+def _read_features(slim_path, zoom):
+    """Return [(name, [(ext_ring, holes, bbox), ...]), ...] in zoom pixels."""
+    features = []
+    with open(slim_path, encoding="utf-8") as f:
+        for line in f:
+            feat = json.loads(line)
+            geom = feat["geometry"]
+            polys = (geom["coordinates"] if geom["type"] == "MultiPolygon"
+                     else [geom["coordinates"]])
+            parts = []
+            for rings in polys:
+                projected = [
+                    [lonlat_to_pixel(lon, lat, zoom) for lon, lat in ring]
+                    for ring in rings
+                ]
+                ext = projected[0]
+                xs = [p[0] for p in ext]
+                ys = [p[1] for p in ext]
+                bbox = (min(xs), min(ys), max(xs), max(ys))
+                parts.append((ext, projected[1:], bbox))
+            features.append((feat["properties"].get("name", ""), parts))
+    return features
+
+
+def _place_labels(features, font):
+    """Place one label per named park at the centroid of its largest part.
+
+    Greedy, largest-polygon-first, against a spatial hash; a label that does
+    not fit its polygon at this zoom, or collides with an already-placed
+    label, is dropped. Returns [(x, y, name, bbox), ...].
+    """
+    grid = defaultdict(list)
+
+    def cells(x0, y0, x1, y1):
+        for cx in range(int(x0 // _GRID_CELL), int(x1 // _GRID_CELL) + 1):
+            for cy in range(int(y0 // _GRID_CELL), int(y1 // _GRID_CELL) + 1):
+                yield (cx, cy)
+
+    def collides(box):
+        x0, y0, x1, y1 = box
+        for key in cells(*box):
+            for ox0, oy0, ox1, oy1 in grid.get(key, ()):
+                if x0 < ox1 and x1 > ox0 and y0 < oy1 and y1 > oy0:
+                    return True
+        return False
+
+    candidates = []
+    for name, parts in features:
+        if not name:
+            continue
+        ext, _holes, bbox = max(
+            parts, key=lambda p: (p[2][2] - p[2][0]) * (p[2][3] - p[2][1])
+        )
+        bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        w = font.getlength(name)
+        if w > bw * LABEL_MAX_WIDTH_RATIO or bh < LABEL_MIN_BBOX_HEIGHT:
+            continue
+        cx, cy = _ring_centroid(ext)
+        candidates.append((bw * bh, cx, cy, name, w))
+
+    labels = []
+    for _area, cx, cy, name, w in sorted(candidates, reverse=True):
+        pad = STROKE_WIDTH
+        box = (cx - w / 2 - pad, cy - FONT_SIZE / 2 - pad,
+               cx + w / 2 + pad, cy + FONT_SIZE / 2 + pad)
+        if collides(box):
+            continue
+        for key in cells(*box):
+            grid[key].append(box)
+        labels.append((cx, cy, name, box))
+    return labels
+
+
+def _ring_centroid(ring):
+    """Area centroid of a closed ring; falls back to the vertex mean."""
+    a = cx = cy = 0.0
+    for (x0, y0), (x1, y1) in zip(ring, ring[1:] + ring[:1]):
+        cross = x0 * y1 - x1 * y0
+        a += cross
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+    if abs(a) < 1e-9:
+        return (sum(p[0] for p in ring) / len(ring),
+                sum(p[1] for p in ring) / len(ring))
+    return cx / (3 * a), cy / (3 * a)
+
+
+def _tiles_touching(bbox, pad=OUTLINE_WIDTH + STROKE_WIDTH):
+    x0, y0, x1, y1 = bbox
+    for tx in range(int((x0 - pad) // TILE_SIZE), int((x1 + pad) // TILE_SIZE) + 1):
+        for ty in range(int((y0 - pad) // TILE_SIZE), int((y1 + pad) // TILE_SIZE) + 1):
+            yield (tx, ty)
+
+
+def _render_tile(tx, ty, polys, labels, font):
+    img = Image.new("RGBA", (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    ox, oy = tx * TILE_SIZE, ty * TILE_SIZE
+
+    def local(ring):
+        return [(x - ox, y - oy) for x, y in ring]
+
+    # Fills first (via a mask so holes stay clear), then all outlines on top.
+    for ext, holes in polys:
+        mask = Image.new("L", (TILE_SIZE, TILE_SIZE), 0)
+        mdraw = ImageDraw.Draw(mask)
+        mdraw.polygon(local(ext), fill=255)
+        for hole in holes:
+            mdraw.polygon(local(hole), fill=0)
+        img.paste(FILL_COLOR, (0, 0), mask)
+
+    for ext, holes in polys:
+        for ring in (ext, *holes):
+            pts = local(ring)
+            draw.line(pts + pts[:1], fill=OUTLINE_COLOR, width=OUTLINE_WIDTH)
+
+    for x, y, name in labels:
+        draw.text(
+            (x - ox, y - oy), name, font=font, fill=LABEL_COLOR,
+            stroke_width=STROKE_WIDTH, stroke_fill=HALO_COLOR, anchor="mm",
+        )
+
+    return img

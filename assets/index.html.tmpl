@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toronto Parks &mdash; Reference Layer for OSM Editors</title>
+<link rel="stylesheet" href="index.css">
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="">
+<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<script defer src="index.js"></script>
+</head>
+<body>
+<main>
+
+<h1>Toronto Parks</h1>
+<p class="lead">
+  A reference layer of the parks, golf courses, cemeteries and other public
+  green spaces published by the City of Toronto &mdash;
+  <strong>{{PARK_COUNT}}</strong> polygons with names &mdash; ready to add
+  to the <a href="https://www.openstreetmap.org">OpenStreetMap</a> editors
+  <strong>iD</strong> and <strong>JOSM</strong> while you map.
+</p>
+<p class="meta">City data: {{DATA_DATE}} &middot; tiles rebuilt: {{BUILD_DATE}}</p>
+
+<div class="attribution">
+  Park data &copy; City of Toronto, published under the
+  <a href="{{LICENSE_URL}}">Open Government Licence &ndash; Toronto</a>.
+  Source: <a href="{{DATASET_PAGE}}">Green Spaces</a>.
+</div>
+
+<h2>Preview</h2>
+<div id="preview-map" data-raster-url="{{RASTER_URL}}"></div>
+<p class="meta">
+  The raster layer drawn over OpenStreetMap: park boundaries with names.
+  Pan and zoom to check coverage for the area you map.
+</p>
+
+<h2>Two layers &mdash; which to use</h2>
+<table>
+  <tr>
+    <th>Vector layer</th>
+    <td>Interactive. Click a polygon to read its tags
+        (<code>name</code>, <code>class</code>, <code>area_id</code>).
+        Best in <strong>iD</strong>.</td>
+  </tr>
+  <tr>
+    <th>Raster layer</th>
+    <td>Boundaries and park names drawn directly on the tiles. A readable
+        backdrop. Best in <strong>JOSM</strong>.</td>
+  </tr>
+</table>
+
+<div class="note">
+  <strong>Heads-up:</strong> a park's name label only renders once the polygon
+  is big enough on screen to fit it &mdash; big parks are labelled from city
+  zoom, small parkettes only when you zoom in.
+</div>
+
+<h2>Add to iD</h2>
+<h3>Vector layer (interactive)</h3>
+<ol>
+  <li>Open the iD editor and press <kbd>U</kbd> for the <em>Map Data</em> panel.</li>
+  <li>Under <em>Custom Map Data</em>, open the settings and paste this URL:</li>
+</ol>
+<pre class="url">{{VECTOR_URL}}</pre>
+<p>Zoom in, then click any park to see its tags in the inspector.</p>
+
+<h3>Raster layer (visible names)</h3>
+<ol>
+  <li>Open the <em>Background</em> panel and choose <em>Custom</em>.</li>
+  <li>Paste this URL template:</li>
+</ol>
+<pre class="url">{{RASTER_URL}}</pre>
+
+<h2>Add to JOSM</h2>
+<h3>Raster layer (recommended for JOSM)</h3>
+<ol>
+  <li>Open <em>Preferences &rarr; Imagery</em> and click <strong>+TMS</strong>.</li>
+  <li>Paste this entry (the <code>tms[13,17]</code> prefix sets the zoom range;
+      JOSM scales it up past z17):</li>
+</ol>
+<pre class="url">tms[13,17]:{{RASTER_URL_JOSM}}</pre>
+<p>
+  Give it a name such as <em>Toronto Parks</em>, click OK, then enable
+  it from the <em>Imagery</em> menu. Note JOSM's placeholder is
+  <code>{zoom}</code>, not <code>{z}</code>.
+</p>
+
+<h3>Vector layer (optional)</h3>
+<p>
+  JOSM can also add the vector tiles via <em>Preferences &rarr; Imagery</em> &rarr;
+  <strong>+MVT</strong>:
+</p>
+<pre class="url">{{VECTOR_URL_JOSM}}</pre>
+
+<h2>Notes</h2>
+<ul>
+  <li>Polygons kept from the Green Spaces dataset: parks, open green spaces,
+      golf courses, cemeteries and civic squares. Traffic islands, road
+      slivers and hydro corridors are filtered out.</li>
+  <li>Vector tiles are pre-rendered through zoom 19; raster tiles for
+      z13&ndash;17 (the editor overzooms them further).</li>
+  <li>Tiles are refreshed weekly from the City's dataset (the City updates
+      it monthly).</li>
+  <li>This is a <strong>reference</strong> layer &mdash; verify against survey or
+      imagery before copying anything into OpenStreetMap.</li>
+</ul>
+
+<footer>
+  <a href="https://github.com/{{GITHUB_REPO}}">Project source on GitHub</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://skfd.github.io/toronto-addresses-layer/">Toronto address points layer</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://skfd.github.io/toronto-waterways-layer/">Toronto waterways layer</a>
+</footer>
+
+</main>
+</body>
+</html>
