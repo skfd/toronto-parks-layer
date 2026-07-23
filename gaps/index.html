@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toronto Parks &mdash; OSM Coverage Gaps</title>
+<link rel="stylesheet" href="../index.css">
+<link rel="stylesheet" href="gaps.css">
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="">
+<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<script defer src="gaps.js"></script>
+</head>
+<body class="app">
+
+<header class="bar">
+  <div class="bar-head">
+    <h1>Toronto Parks &mdash; OSM coverage gaps</h1>
+    <a class="back" href="../">&larr; reference layer</a>
+  </div>
+  <div class="counts">
+    <div class="count missing"><strong>206</strong><span>missing in OSM</span></div>
+    <div class="count mismatch"><strong>185</strong><span>name mismatches</span></div>
+    <div class="count unnamed"><strong>176</strong><span>OSM area unnamed</span></div>
+    <div class="count trca"><strong>92</strong><span>TRCA parcels</span></div>
+    <div class="count"><strong>1,745</strong><span>City polygons</span></div>
+    <div class="count"><strong>6,711</strong><span>OSM park areas</span></div>
+    <div class="count meta-count">City data 2026-05-05 &middot; compared 2026-07-23</div>
+  </div>
+</header>
+
+<div class="layout">
+  <div id="gap-map"
+       data-geojson="gaps.geojson"
+       data-raster="../tiles/raster/{z}/{x}/{y}.png"></div>
+
+  <aside class="panel">
+    <div class="panel-head">
+      <div class="controls">
+        <label><span class="swatch missing"></span>
+          <input type="checkbox" id="show-missing" checked> Missing</label>
+        <label><span class="swatch mismatch"></span>
+          <input type="checkbox" id="show-mismatch" checked> Mismatch</label>
+        <label><span class="swatch unnamed"></span>
+          <input type="checkbox" id="show-unnamed" checked> Unnamed OSM</label>
+        <label><span class="swatch trca"></span>
+          <input type="checkbox" id="show-trca"> TRCA lands</label>
+        <input type="search" id="filter" placeholder="Filter by name...">
+      </div>
+      <p class="hint">
+        Green fills are the City's parks (raster layer); coloured dots flag the
+        gaps. Click a row to outline it on the map, then press <kbd>O</kbd> to
+        open it on openstreetmap.org or <kbd>I</kbd> in the iD editor (each row
+        has the same <strong>OSM&nbsp;&middot;&nbsp;iD</strong> link pair).
+        Matching is by spatial overlap &mdash; verify against imagery before
+        editing OSM.
+      </p>
+    </div>
+    <div class="table-scroll">
+      <table id="gap-table">
+        <thead>
+          <tr><th class="col-name">Park (City name)</th><th>Class</th>
+              <th>Status</th><th>OSM &middot; iD</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </aside>
+</div>
+
+</body>
+</html>
