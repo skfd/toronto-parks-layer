@@ -97,11 +97,13 @@ in the GitHub repo, set **Settings &rarr; Pages &rarr; Source** to the
 Run as Administrator:
 
 ```powershell
-.\schedule-add.ps1      # registers a weekly task "TorontoParksLayer", Mondays 15:00
+.\schedule-add.ps1      # registers a weekly task "kk-TorontoParksLayer", Mondays 16:30
 .\schedule-remove.ps1   # unregisters it
 ```
 
-Weekly is enough &mdash; the City refreshes the Green Spaces dataset monthly.
+Weekly is enough &mdash; the City refreshes the Green Spaces dataset monthly, so
+the tiles rarely change; it is the gap page, which diffs against live OSM, that
+moves week to week. 16:30 keeps the build clear of the daily address-layer task.
 The task runs `python run.py update` and appends output to `logs\scheduler.log`.
 
 ## Tests
