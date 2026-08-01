@@ -1,3 +1,4 @@
+addressvault
 requests
 Pillow
 ijson

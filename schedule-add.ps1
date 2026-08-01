@@ -15,7 +15,13 @@ $action = New-ScheduledTaskAction `
 # 16:30 clears the daily address task's worst case (14:00 start, 2h limit), so
 # the two never drive tippecanoe in the same WSL instance at once.
 $trigger  = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "16:30"
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -StartWhenAvailable
+# Restart on failure. 'update' exits 75 as soon as it sees no usable link
+# instead of blocking on one (the ExecutionTimeLimit would kill a long wait
+# anyway), so three tries half an hour apart turn a dead link at 16:30 into a
+# run by 18:00 rather than a seven-day gap -- which is what a dead resolver
+# cost this task on 2026-07-27. Still clear of the 23:00 quiet window.
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -StartWhenAvailable `
+    -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 30)
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Force
 

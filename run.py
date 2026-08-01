@@ -6,6 +6,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from addressvault import LinkUnavailable
+
 from src import config
 from src.download import download
 from src.slim import slim
@@ -14,6 +16,12 @@ from src.vector import build_vector
 from src.raster import build_raster
 from src.site import build_site
 from src.publish import publish
+
+# Offline or metered is not a build failure -- same as if the machine had been
+# off, the run just did not happen. 75 is the conventional EX_TEMPFAIL, matching
+# the addressvault CLI, so the scheduled task's restart-on-failure retries it
+# and a wrapper can tell "no network" apart from a broken build.
+EXIT_LINK_UNAVAILABLE = 75
 
 
 def _banner(text):
@@ -125,7 +133,12 @@ def main():
     if not hasattr(args, "force"):
         args.force = False
 
-    COMMANDS[args.command][0](args)
+    try:
+        COMMANDS[args.command][0](args)
+    except LinkUnavailable as e:
+        print(f"\nSkipped: {e}")
+        print("Nothing was fetched or published; the task will retry.")
+        sys.exit(EXIT_LINK_UNAVAILABLE)
 
 
 if __name__ == "__main__":
