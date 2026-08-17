@@ -97,6 +97,8 @@ def _build_gaps_page(build_date):
         "{{TRCA_COUNT}}": f"{summary.get('trca', 0):,}",
         "{{CITY_COUNT}}": f"{summary.get('city', 0):,}",
         "{{OSM_COUNT}}": f"{summary.get('osm_rings', 0):,}",
+        "{{OSM_DATE}}": summary.get("osm_date", build_date),
+        "{{OSM_NOTE}}": _osm_note(summary),
         "{{GITHUB_REPO}}": config.GITHUB_REPO,
     }
     for key, value in replacements.items():
@@ -109,6 +111,23 @@ def _build_gaps_page(build_date):
         shutil.copy(os.path.join(config.ASSETS_DIR, name),
                     os.path.join(gaps_dir, name))
     print(f"Gap page rendered: {gaps_dir}")
+
+
+def _osm_note(summary):
+    """Warn on the page itself when the OSM half of the diff is not current.
+
+    The gap list is only worth acting on if both sides are fresh, and the OSM
+    side is the one that moves daily. A page dated today whose OSM data is two
+    weeks old sends a mapper to add a park somebody else already added.
+    """
+    if not summary.get("osm_stale"):
+        return ""
+    when = summary.get("osm_date", "an earlier run")
+    return (
+        '<p class="stale">Overpass could not be reached for this build, so '
+        f'these gaps were computed against OSM data from <strong>{when}</strong>. '
+        'Anything mapped since then still shows as a gap.</p>'
+    )
 
 
 def _data_date(fallback):

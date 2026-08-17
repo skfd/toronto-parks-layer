@@ -22,6 +22,13 @@ from src.publish import publish
 # the addressvault CLI, so the scheduled task's restart-on-failure retries it
 # and a wrapper can tell "no network" apart from a broken build.
 EXIT_LINK_UNAVAILABLE = 75
+# The tiles built and published fine, but the gap page is comparing against
+# cached OSM because no Overpass mirror answered. Non-zero so the scheduled
+# task's restart policy (3 tries, 30 min apart) treats it as the retryable
+# outage it is -- two silent 504s in Aug 2026 cost the page a fortnight of
+# freshness while the task reported success both times. Raised only after the
+# publish, so a flaky Overpass never costs the tiles.
+EXIT_OSM_STALE = 70
 
 
 def _banner(text):
@@ -42,7 +49,7 @@ def cmd_slim(args):
 
 def cmd_compare(args):
     _banner("Compare with OSM")
-    compare()
+    return compare()
 
 
 def cmd_vector(args):
@@ -70,21 +77,36 @@ def cmd_publish(args):
 
 
 def cmd_build(args):
+    """Run the pipeline; return True if the gap page used live OSM data."""
     cmd_download(args)
     cmd_slim(args)
     # The OSM comparison is best-effort: a flaky Overpass must not stop a build.
+    # "Best-effort" is not "one attempt" though -- compare() works through every
+    # mirror several times before it settles for the cache, and says which it
+    # used so the caller can report a stale gap page as the outage it is.
+    fresh = False
     try:
-        cmd_compare(args)
+        summary = cmd_compare(args)
+        fresh = not summary.get("osm_stale")
+    except LinkUnavailable:
+        raise          # the link died mid-run; that is a 75, not a build fault
     except Exception as e:
         print(f"Warning: OSM comparison skipped ({e}).")
     cmd_vector(args)
     cmd_raster(args)
     cmd_site(args)
+    return fresh
 
 
 def cmd_update(args):
-    cmd_build(args)
+    fresh = cmd_build(args)
     cmd_publish(args)
+    if not fresh:
+        print("\nThe site is published, but its gap page is comparing against "
+              "cached OSM data.")
+        print("Exiting non-zero so the scheduled task retries the Overpass "
+              "fetch rather than waiting a week.")
+        sys.exit(EXIT_OSM_STALE)
 
 
 def _latest_geojson():

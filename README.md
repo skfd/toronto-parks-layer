@@ -120,11 +120,44 @@ A download dropped mid-body resumes with a Range request instead of starting
 over, and a push that cannot resolve `github.com` is retried without rebuilding
 &mdash; the finished tiles stay on disk, so `python run.py publish` can complete
 the run later. Before this, a dead resolver on 2026-07-27 took out the run with
-an unhandled traceback out of the first request. The OSM comparison is unchanged:
-it was already best-effort, falling back to the cached Overpass response.
+an unhandled traceback out of the first request.
 
 Re-run `schedule-add.ps1` to apply the restart settings to an already registered
 task.
+
+### Keeping the OSM half fresh
+
+The gap page is only worth acting on if both sides of the diff are current, and
+the OSM side is the one that moves daily. It used to be fetched with a single
+POST to `overpass-api.de`, falling back to the cached response on any error &mdash;
+which meant a transient 504 cost a whole week. That happened twice running, on
+2026-08-10 and 2026-08-17, and the task reported success both times while the
+page compared against OSM data from Aug 3.
+
+The fetch now works for it. Every mirror in `OVERPASS_URLS` is tried, and the
+whole list is retried `OVERPASS_ROUNDS` times a minute apart, because what is
+being worked around is a loaded instance shedding one request. A reply with
+fewer than `OSM_MIN_ELEMENTS` elements is refused however healthy its status
+code: `overpass.osm.ch` serves a Switzerland extract and answers a Toronto bbox
+with a valid, empty result, which taken at face value would report all 1,745
+City parks as missing from OSM.
+
+Measured 2026-08-17 with the real query, from this laptop:
+
+| mirror | time | result |
+| --- | --- | --- |
+| `overpass-api.de` | 5.1s | 200, 6,690 elements |
+| `overpass.private.coffee` | 16.9s | 200, 6,577 elements |
+| `overpass.kumi.systems` | 32.1s | 504 |
+| `overpass.osm.jp` | 0.8s | SSL failure |
+| `overpass.osm.ch` | 0.9s | 200, **0 elements** (wrong region) |
+
+If it still cannot reach anyone, the cache is used &mdash; a stale gap page beats
+none &mdash; but the run stops being quiet about it. The page prints the OSM
+data's own date beside the City date and carries a warning banner, and `update`
+exits **70** *after* publishing, so the tiles still ship and the task's
+restart-on-failure tries the fetch again in half an hour instead of in a week.
+Being offline is told apart from an Overpass outage and stays a 75.
 
 ## Tests
 

@@ -81,7 +81,32 @@ AREA_ID_KEY = "AREA_ID"       # stable city identifier for the polygon
 # --- OSM comparison (gap-review page) ---
 # Park-like areas are pulled from OSM via Overpass and matched against the kept
 # City polygons by spatial overlap; the gaps feed build/site/gaps/.
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+#
+# Mirrors are tried in order, and the whole list is retried a few times: the
+# failure this guards against is a loaded instance shedding a request, not a bad
+# query. A single attempt against a 504 was the entire effort on 2026-08-10 and
+# 2026-08-17, and the gap page silently ran on a fortnight-old diff.
+#
+# Measured 2026-08-17 with this exact query, from this laptop:
+#   overpass-api.de          5.1s   200   6,690 elements
+#   overpass.private.coffee 16.9s   200   6,577 elements
+#   overpass.kumi.systems   32.1s   504   (the "faster mirror" was the sick one)
+#   overpass.osm.jp          0.8s   SSL failure
+#   overpass.osm.ch          0.9s   200       0 elements
+# overpass.osm.ch is deliberately absent: it serves a Switzerland extract and
+# answers a Toronto bbox with a perfectly valid empty result, which would read
+# as "every City park is missing from OSM". OSM_MIN_ELEMENTS is the guard
+# against any mirror that ever does that.
+OVERPASS_URLS = (
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+)
+OVERPASS_TIMEOUT = 300
+OVERPASS_ROUNDS = 3
+OVERPASS_ROUND_WAIT = 60
+# Floor on a reply's element count. The query returns ~6,700; anything under a
+# few thousand is a wrong-region or truncated answer, not a week's mapping.
+OSM_MIN_ELEMENTS = 3000
 # Overpass rejects the default requests User-Agent (HTTP 406); identify the tool.
 USER_AGENT = "toronto-parks-layer/1.0 (https://github.com/skfd/toronto-parks-layer)"
 # Toronto bounding box (S, W, N, E), a touch larger than the city. OSM areas
@@ -94,5 +119,8 @@ OSM_AREA_TAGS = {
     "amenity": ("grave_yard",),
 }
 OSM_CACHE_PATH = os.path.join(DATA_DIR, "osm-parks.json")
+# When the cached Overpass reply was fetched, and from where. The cache file's
+# own mtime cannot say this -- a fallback run rewrites nothing.
+OSM_FETCH_PATH = os.path.join(DATA_DIR, ".osm-fetch.json")
 GAPS_GEOJSON_PATH = os.path.join(DATA_DIR, "gaps.geojson")
 GAPS_COUNT_PATH = os.path.join(DATA_DIR, "gaps.count.json")

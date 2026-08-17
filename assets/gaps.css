@@ -47,6 +47,18 @@ body.app { margin: 0; display: flex; flex-direction: column; }
   margin-left: auto;
 }
 
+/* Shown only when Overpass could not be reached and the diff ran on cached OSM;
+   the header is otherwise all counts, so a warning needs its own row. */
+.stale {
+  margin: .5rem 0 0;
+  padding: .45rem .7rem;
+  border-left: 4px solid #e8590c;
+  background: rgba(232, 89, 12, .09);
+  color: var(--ink);
+  font-size: .85rem;
+  line-height: 1.4;
+}
+
 /* --- two-panel body --- */
 .layout { flex: 1; display: flex; min-height: 0; }
 #gap-map { flex: 1 1 auto; min-width: 0; height: 100%; }
