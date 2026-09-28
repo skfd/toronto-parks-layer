@@ -32,7 +32,9 @@ its page redirects to Green Spaces.)
   no overlapping OSM area ("missing") and matched parks whose OSM name differs
   ("mismatch") &mdash; on an interactive map and a filterable table. OSM areas
   are pulled from Overpass; matching is by spatial overlap (see
-  [`src/compare.py`](src/compare.py)).
+  [`src/compare.py`](src/compare.py)). Its
+  [history page](https://skfd.github.io/toronto-parks-layer/gaps/history.html)
+  charts those counts over time, one point per weekly run.
 
 All of it is published to GitHub Pages and rebuilt weekly.
 
@@ -65,6 +67,7 @@ gap-review page still tracks them while the tiles do not.
 python run.py download   # fetch the latest Green Spaces GeoJSON (smart-cached)
 python run.py slim       # filter to park-ish polygons -> slim GeoJSONL
 python run.py compare    # diff City polygons against OSM -> data/gaps.geojson
+python run.py backfill   # one-off: reconstruct past weeks' gap counts from OSM history
 python run.py vector     # build vector (MVT) tiles via WSL tippecanoe
 python run.py raster     # build labelled raster (PNG) tiles
 python run.py site       # render the landing page (+ the gap-review page)
@@ -124,6 +127,38 @@ an unhandled traceback out of the first request.
 
 Re-run `schedule-add.ps1` to apply the restart settings to an already registered
 task.
+
+### Gap history
+
+Every live comparison appends one line to `data/history.jsonl` -- the date, the
+OSM data date, and the missing / mismatch / unnamed / TRCA counts -- and the
+site step charts it at [`/gaps/history.html`](https://skfd.github.io/toronto-parks-layer/gaps/history.html),
+with the rows published beside it as `gaps/history.jsonl`. That is the whole
+record the observer keeps: the tiles and the gap list are rebuilt from scratch
+and force-pushed each week, but this file only grows, so the scheduled
+`update` extends the chart by one point every Monday. A run that fell back to
+cached OSM is not recorded; it observed nothing new, and a point it drew would
+be a false plateau.
+
+Nothing heavier is kept on purpose. OSM keeps its own history, so the record is
+reconstructible: `python run.py backfill` asks `overpass-api.de` what OSM looked
+like on each past Monday (an attic query, `[date:...]`, which only that
+instance is relied on for) and re-runs the comparison against it, adding rows
+marked `attic`. It is paced -- one attempt per date, 30 s between dates, and
+it stops at the first unanswered query -- because attic queries cost the
+instance more than live ones and this is a one-off, not the weekly build. Dates
+already on record are skipped, so an interrupted run resumes when re-run.
+The default range starts 2026-06-01, the week before the layer went live;
+`--since`, `--until`, `--every` and `--pause` adjust it.
+
+Two caveats the page states: a reconstructed week is compared against
+*today's* City polygons (the City side is not archived; Green Spaces changes
+monthly and slowly), and the counts follow the City dataset, so they move when
+the City adds or reclassifies parks, not only when someone maps one.
+
+A checkout without `data/history.jsonl` (a fresh clone, a wiped `data/`) seeds
+itself from the published `gaps/history.jsonl` before recording, so the record
+survives the machine it was made on.
 
 ### Keeping the OSM half fresh
 

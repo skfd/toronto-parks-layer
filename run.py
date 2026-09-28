@@ -3,6 +3,7 @@
 import argparse
 import os
 import sys
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -12,6 +13,7 @@ from src import config
 from src.download import download
 from src.slim import slim
 from src.compare import compare
+from src.history import backfill
 from src.vector import build_vector
 from src.raster import build_raster
 from src.site import build_site
@@ -50,6 +52,15 @@ def cmd_slim(args):
 def cmd_compare(args):
     _banner("Compare with OSM")
     return compare()
+
+
+def cmd_backfill(args):
+    _banner("Backfill gap history")
+    if not os.path.isfile(config.SLIM_PATH):
+        raise RuntimeError("No slim parks file. Run 'download' and 'slim' first.")
+    until = date.fromisoformat(args.until) if args.until else date.today()
+    added = backfill(date.fromisoformat(args.since), until, args.every, args.pause)
+    print(f"Added {added} row(s) to {config.HISTORY_PATH}")
 
 
 def cmd_vector(args):
@@ -126,6 +137,7 @@ COMMANDS = {
     "download": (cmd_download, "Download the latest Green Spaces GeoJSON"),
     "slim": (cmd_slim, "Filter parks into slim GeoJSONL"),
     "compare": (cmd_compare, "Compare City polygons against OSM -> gaps.geojson"),
+    "backfill": (cmd_backfill, "Reconstruct past gap counts from OSM history"),
     "vector": (cmd_vector, "Build vector (MVT) tiles via WSL tippecanoe"),
     "raster": (cmd_raster, "Build labelled raster (PNG) tiles"),
     "site": (cmd_site, "Render the GitHub Pages landing page"),
@@ -147,6 +159,15 @@ def main():
                 "--force", action="store_true",
                 help="Re-download even if the remote file is unchanged",
             )
+        if name == "backfill":
+            p.add_argument("--since", default=config.BACKFILL_SINCE,
+                           help=f"First date, YYYY-MM-DD (default {config.BACKFILL_SINCE})")
+            p.add_argument("--until", default=None,
+                           help="Stop before this date (default today)")
+            p.add_argument("--every", type=int, default=config.BACKFILL_STEP_DAYS,
+                           help="Days between points (default %(default)s)")
+            p.add_argument("--pause", type=int, default=config.BACKFILL_PAUSE,
+                           help="Seconds between Overpass queries (default %(default)s)")
 
     args = parser.parse_args()
     if args.command is None:

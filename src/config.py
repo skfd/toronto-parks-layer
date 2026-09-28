@@ -124,3 +124,19 @@ OSM_CACHE_PATH = os.path.join(DATA_DIR, "osm-parks.json")
 OSM_FETCH_PATH = os.path.join(DATA_DIR, ".osm-fetch.json")
 GAPS_GEOJSON_PATH = os.path.join(DATA_DIR, "gaps.geojson")
 GAPS_COUNT_PATH = os.path.join(DATA_DIR, "gaps.count.json")
+
+# --- Gap history (trend page) ---
+# One JSON line per live compare run: the gap counts and what they were
+# computed against. It lives in data/ like the rest of the observer's state.
+# The tiles are rebuilt from scratch and force-pushed every week; this file is
+# appended to, and its published copy re-seeds a checkout that has none.
+HISTORY_PATH = os.path.join(DATA_DIR, "history.jsonl")
+HISTORY_URL = f"{PAGES_URL}/gaps/history.jsonl"
+# Backfill. overpass-api.de keeps OSM's full history and answers the same
+# query for a past instant ([date:...]); the other mirrors do not all carry
+# it, so only this instance is asked. Weekly points, one attempt per date,
+# and a pause between dates -- attic queries are heavier than live ones.
+ATTIC_URL = "https://overpass-api.de/api/interpreter"
+BACKFILL_SINCE = "2026-06-01"   # a Monday, the week before the layer went live
+BACKFILL_STEP_DAYS = 7          # the weekly schedule's cadence
+BACKFILL_PAUSE = 30

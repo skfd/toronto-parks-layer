@@ -26,7 +26,7 @@ from urllib.parse import urlsplit
 import requests
 from addressvault import net
 
-from src import config
+from src import config, history
 
 
 def compare():
@@ -51,12 +51,15 @@ def compare():
     if from_cache:
         print(f"NOTE: compared against cached OSM data from {osm_date}, "
               f"not a live Overpass fetch.")
+    history.record(summary)
     return summary
 
 
 # --- OSM source -------------------------------------------------------------
 
-def _overpass_query():
+def _overpass_query(at=None):
+    """The Overpass QL for park-like areas; ``at`` (ISO instant) asks for OSM
+    as it stood then -- an attic query, used by the history backfill."""
     s, w, n, e = config.TORONTO_BBOX
     bbox = f"{s},{w},{n},{e}"
     parts = []
@@ -66,7 +69,10 @@ def _overpass_query():
         parts.append(f'  relation["{key}"~"^({rx})$"]({bbox});')
     # "out geom" (body verbosity) so RELATIONS carry their members + geometry;
     # "out tags geom" would strip member lists and silently drop every relation.
-    return "[out:json][timeout:180];\n(\n" + "\n".join(parts) + "\n);\nout geom;"
+    settings = "[out:json][timeout:180]"
+    if at:
+        settings += f'[date:"{at}"]'
+    return settings + ";\n(\n" + "\n".join(parts) + "\n);\nout geom;"
 
 
 class OsmUnavailable(Exception):

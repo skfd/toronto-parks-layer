@@ -8,7 +8,7 @@ from datetime import date
 
 from PIL import Image
 
-from src import config
+from src import config, history
 
 # Screenshots shown on the landing page, copied from the project root when
 # present (they are added manually after the first publish).
@@ -111,6 +111,44 @@ def _build_gaps_page(build_date):
         shutil.copy(os.path.join(config.ASSETS_DIR, name),
                     os.path.join(gaps_dir, name))
     print(f"Gap page rendered: {gaps_dir}")
+    _build_history_page(gaps_dir, build_date)
+
+
+def _build_history_page(gaps_dir, build_date):
+    """Render gaps/history.html: every recorded run's gap counts, charted.
+
+    The rows are inlined into the page (the chart needs no second request) and
+    published beside it as history.jsonl, which is both the raw data for anyone
+    who wants it and what re-seeds a checkout without a history file.
+    """
+    rows = history.load()
+    with open(os.path.join(config.ASSETS_DIR, "history.html.tmpl"),
+              encoding="utf-8") as f:
+        html = f.read()
+    replacements = {
+        "{{PAGES_URL}}": config.PAGES_URL,
+        "{{BUILD_DATE}}": build_date,
+        "{{GITHUB_REPO}}": config.GITHUB_REPO,
+        "{{RUN_COUNT}}": f"{len(rows):,}",
+        "{{FIRST_DATE}}": rows[0]["date"] if rows else build_date,
+        "{{HISTORY_JSON}}": json.dumps(rows),
+        "{{HISTORY_ROWS}}": "\n".join(_history_row(r) for r in reversed(rows)),
+    }
+    for key, value in replacements.items():
+        html = html.replace(key, value)
+    with open(os.path.join(gaps_dir, "history.html"), "w", encoding="utf-8") as f:
+        f.write(html)
+    shutil.copy(os.path.join(config.ASSETS_DIR, "history.js"),
+                os.path.join(gaps_dir, "history.js"))
+    if os.path.isfile(config.HISTORY_PATH):
+        shutil.copy(config.HISTORY_PATH, os.path.join(gaps_dir, "history.jsonl"))
+    print(f"History page rendered: {len(rows):,} runs")
+
+
+def _history_row(r):
+    source = "reconstructed" if r.get("source") == "attic" else "live"
+    cells = [r["date"]] + [f"{r.get(k, 0):,}" for k in history.FIELDS] + [source]
+    return "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
 
 
 def _osm_note(summary):

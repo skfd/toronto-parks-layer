@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toronto Parks &mdash; OSM Coverage Gaps Over Time</title>
+<link rel="stylesheet" href="../index.css">
+<style>
+  main { max-width: 900px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 1.1rem; font-size: .9rem; margin: 1rem 0 .25rem; }
+  .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  .legend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid; border-radius: 2px; }
+  .legend .attic i { width: 14px; height: 12px; border: 0; background: var(--code-bg); }
+  .chart { position: relative; overflow-x: auto; }
+  .chart svg { display: block; width: 100%; min-width: 640px; height: auto; font-size: 12px; }
+  .chart .attic-band { fill: var(--code-bg); }
+  .chart .grid { stroke: var(--border); stroke-width: 1; }
+  .chart .axis { fill: var(--muted); }
+  .chart .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .pt { stroke: #fff; stroke-width: 2; }
+  .chart .end-label { fill: var(--ink); font-weight: 600; }
+  .chart .crosshair { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
+  .chart .hit { fill: transparent; cursor: crosshair; }
+  .tip {
+    position: absolute; top: 0; left: 0; pointer-events: none; display: none;
+    background: #fff; border: 1px solid var(--border); border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12); padding: .45rem .65rem;
+    font-size: .85rem; line-height: 1.45; white-space: nowrap;
+  }
+  .tip .d { color: var(--muted); }
+  .tip i { display: inline-block; width: 12px; border-top: 2px solid; margin-right: .4rem; vertical-align: middle; }
+  .tip strong { display: inline-block; min-width: 3em; }
+  .empty { color: var(--muted); padding: 2rem 0; }
+  table.runs { font-size: .9rem; }
+  table.runs th { width: auto; }
+  table.runs td:not(:first-child):not(:last-child) { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+<script defer src="history.js"></script>
+</head>
+<body>
+<main>
+
+<h1>OSM coverage gaps over time</h1>
+<p class="lead">
+  How many City of Toronto parks are still <strong>missing</strong> from
+  OpenStreetMap, mapped under a <strong>different name</strong>, or mapped as an
+  <strong>unnamed</strong> area &mdash; one point per weekly comparison, so a
+  mapper can see the worklist shrink.
+</p>
+<p class="meta">{{RUN_COUNT}} comparisons since {{FIRST_DATE}} &middot; last {{BUILD_DATE}} &middot;
+  <a href="./">current gaps</a> &middot; <a href="history.jsonl">data (JSONL)</a></p>
+
+<div class="legend" id="legend"></div>
+<div class="chart" id="chart"><div class="tip" id="tip"></div></div>
+
+<p class="meta" style="margin-top:.75rem">
+  Points in the shaded span are reconstructed after the fact from OSM's own
+  history (an Overpass attic query for that date, compared against today's
+  City polygons); the rest were observed by the weekly build. Counts follow
+  the City's Green Spaces dataset, so they move when the City adds or
+  reclassifies parks, not only when someone maps one.
+</p>
+
+<h2>Every comparison</h2>
+<table class="runs">
+  <thead>
+    <tr><th>Date</th><th>Missing</th><th>Mismatch</th><th>Unnamed</th><th>TRCA</th>
+        <th>City polygons</th><th>OSM areas</th><th>Source</th></tr>
+  </thead>
+  <tbody>
+{{HISTORY_ROWS}}
+  </tbody>
+</table>
+
+<p class="meta" style="margin-top:2rem">
+  Built by <a href="https://github.com/{{GITHUB_REPO}}">{{GITHUB_REPO}}</a>.
+  OSM data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.
+</p>
+
+<script type="application/json" id="history-data">{{HISTORY_JSON}}</script>
+</main>
+</body>
+</html>
