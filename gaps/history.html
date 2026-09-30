@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toronto Parks &mdash; OSM Coverage Gaps Over Time</title>
+<link rel="stylesheet" href="../index.css">
+<style>
+  main { max-width: 900px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 1.1rem; font-size: .9rem; margin: 1rem 0 .25rem; }
+  .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  .legend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid; border-radius: 2px; }
+  .legend .attic i { width: 14px; height: 12px; border: 0; background: var(--code-bg); }
+  .chart { position: relative; overflow-x: auto; }
+  .chart svg { display: block; width: 100%; min-width: 640px; height: auto; font-size: 12px; }
+  .chart .attic-band { fill: var(--code-bg); }
+  .chart .grid { stroke: var(--border); stroke-width: 1; }
+  .chart .axis { fill: var(--muted); }
+  .chart .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .pt { stroke: #fff; stroke-width: 2; }
+  .chart .end-label { fill: var(--ink); font-weight: 600; }
+  .chart .crosshair { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
+  .chart .hit { fill: transparent; cursor: crosshair; }
+  .tip {
+    position: absolute; top: 0; left: 0; pointer-events: none; display: none;
+    background: #fff; border: 1px solid var(--border); border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12); padding: .45rem .65rem;
+    font-size: .85rem; line-height: 1.45; white-space: nowrap;
+  }
+  .tip .d { color: var(--muted); }
+  .tip i { display: inline-block; width: 12px; border-top: 2px solid; margin-right: .4rem; vertical-align: middle; }
+  .tip strong { display: inline-block; min-width: 3em; }
+  .empty { color: var(--muted); padding: 2rem 0; }
+  table.runs { font-size: .9rem; }
+  table.runs th { width: auto; }
+  table.runs td:not(:first-child):not(:last-child) { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+<script defer src="history.js"></script>
+</head>
+<body>
+<main>
+
+<h1>OSM coverage gaps over time</h1>
+<p class="lead">
+  How many City of Toronto parks are still <strong>missing</strong> from
+  OpenStreetMap, mapped under a <strong>different name</strong>, or mapped as an
+  <strong>unnamed</strong> area &mdash; one point per weekly comparison, so a
+  mapper can see the worklist shrink.
+</p>
+<p class="meta">19 comparisons since 2026-06-01 &middot; last 2026-09-30 &middot;
+  <a href="./">current gaps</a> &middot; <a href="history.jsonl">data (JSONL)</a></p>
+
+<div class="legend" id="legend"></div>
+<div class="chart" id="chart"><div class="tip" id="tip"></div></div>
+
+<p class="meta" style="margin-top:.75rem">
+  Points in the shaded span are reconstructed after the fact from OSM's own
+  history (an Overpass attic query for that date, compared against today's
+  City polygons); the rest were observed by the weekly build. Counts follow
+  the City's Green Spaces dataset, so they move when the City adds or
+  reclassifies parks, not only when someone maps one.
+</p>
+
+<h2>Every comparison</h2>
+<table class="runs">
+  <thead>
+    <tr><th>Date</th><th>Missing</th><th>Mismatch</th><th>Unnamed</th><th>TRCA</th>
+        <th>City polygons</th><th>OSM areas</th><th>Source</th></tr>
+  </thead>
+  <tbody>
+<tr><td>2026-09-30</td><td>170</td><td>180</td><td>147</td><td>92</td><td>1,756</td><td>6,815</td><td>live</td></tr>
+<tr><td>2026-09-28</td><td>168</td><td>182</td><td>160</td><td>92</td><td>1,754</td><td>6,811</td><td>reconstructed</td></tr>
+<tr><td>2026-09-21</td><td>185</td><td>185</td><td>160</td><td>92</td><td>1,754</td><td>6,774</td><td>reconstructed</td></tr>
+<tr><td>2026-09-14</td><td>187</td><td>186</td><td>161</td><td>92</td><td>1,754</td><td>6,765</td><td>reconstructed</td></tr>
+<tr><td>2026-09-07</td><td>188</td><td>187</td><td>161</td><td>92</td><td>1,754</td><td>6,783</td><td>reconstructed</td></tr>
+<tr><td>2026-08-31</td><td>205</td><td>186</td><td>173</td><td>92</td><td>1,754</td><td>6,762</td><td>reconstructed</td></tr>
+<tr><td>2026-08-24</td><td>206</td><td>186</td><td>174</td><td>92</td><td>1,754</td><td>6,758</td><td>reconstructed</td></tr>
+<tr><td>2026-08-17</td><td>207</td><td>186</td><td>175</td><td>92</td><td>1,754</td><td>6,758</td><td>reconstructed</td></tr>
+<tr><td>2026-08-10</td><td>209</td><td>186</td><td>175</td><td>92</td><td>1,754</td><td>6,754</td><td>reconstructed</td></tr>
+<tr><td>2026-08-03</td><td>210</td><td>185</td><td>176</td><td>92</td><td>1,754</td><td>6,749</td><td>reconstructed</td></tr>
+<tr><td>2026-07-27</td><td>210</td><td>185</td><td>177</td><td>92</td><td>1,754</td><td>6,742</td><td>reconstructed</td></tr>
+<tr><td>2026-07-20</td><td>210</td><td>185</td><td>177</td><td>92</td><td>1,754</td><td>6,709</td><td>reconstructed</td></tr>
+<tr><td>2026-07-13</td><td>210</td><td>185</td><td>177</td><td>92</td><td>1,754</td><td>6,684</td><td>reconstructed</td></tr>
+<tr><td>2026-07-06</td><td>210</td><td>185</td><td>177</td><td>92</td><td>1,754</td><td>6,684</td><td>reconstructed</td></tr>
+<tr><td>2026-06-29</td><td>210</td><td>185</td><td>177</td><td>92</td><td>1,754</td><td>6,661</td><td>reconstructed</td></tr>
+<tr><td>2026-06-22</td><td>210</td><td>185</td><td>177</td><td>92</td><td>1,754</td><td>6,651</td><td>reconstructed</td></tr>
+<tr><td>2026-06-15</td><td>210</td><td>185</td><td>177</td><td>92</td><td>1,754</td><td>6,652</td><td>reconstructed</td></tr>
+<tr><td>2026-06-08</td><td>210</td><td>184</td><td>179</td><td>92</td><td>1,754</td><td>6,651</td><td>reconstructed</td></tr>
+<tr><td>2026-06-01</td><td>212</td><td>184</td><td>181</td><td>92</td><td>1,754</td><td>6,644</td><td>reconstructed</td></tr>
+  </tbody>
+</table>
+
+<p class="meta" style="margin-top:2rem">
+  Built by <a href="https://github.com/skfd/toronto-parks-layer">skfd/toronto-parks-layer</a>.
+  OSM data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.
+</p>
+
+<script type="application/json" id="history-data">[{"date": "2026-06-01", "osm_date": "2026-06-01", "source": "attic", "city": 1754, "osm_rings": 6644, "missing": 212, "mismatch": 184, "unnamed": 181, "trca": 92}, {"date": "2026-06-08", "osm_date": "2026-06-08", "source": "attic", "city": 1754, "osm_rings": 6651, "missing": 210, "mismatch": 184, "unnamed": 179, "trca": 92}, {"date": "2026-06-15", "osm_date": "2026-06-15", "source": "attic", "city": 1754, "osm_rings": 6652, "missing": 210, "mismatch": 185, "unnamed": 177, "trca": 92}, {"date": "2026-06-22", "osm_date": "2026-06-22", "source": "attic", "city": 1754, "osm_rings": 6651, "missing": 210, "mismatch": 185, "unnamed": 177, "trca": 92}, {"date": "2026-06-29", "osm_date": "2026-06-29", "source": "attic", "city": 1754, "osm_rings": 6661, "missing": 210, "mismatch": 185, "unnamed": 177, "trca": 92}, {"date": "2026-07-06", "osm_date": "2026-07-06", "source": "attic", "city": 1754, "osm_rings": 6684, "missing": 210, "mismatch": 185, "unnamed": 177, "trca": 92}, {"date": "2026-07-13", "osm_date": "2026-07-13", "source": "attic", "city": 1754, "osm_rings": 6684, "missing": 210, "mismatch": 185, "unnamed": 177, "trca": 92}, {"date": "2026-07-20", "osm_date": "2026-07-20", "source": "attic", "city": 1754, "osm_rings": 6709, "missing": 210, "mismatch": 185, "unnamed": 177, "trca": 92}, {"date": "2026-07-27", "osm_date": "2026-07-27", "source": "attic", "city": 1754, "osm_rings": 6742, "missing": 210, "mismatch": 185, "unnamed": 177, "trca": 92}, {"date": "2026-08-03", "osm_date": "2026-08-03", "source": "attic", "city": 1754, "osm_rings": 6749, "missing": 210, "mismatch": 185, "unnamed": 176, "trca": 92}, {"date": "2026-08-10", "osm_date": "2026-08-10", "source": "attic", "city": 1754, "osm_rings": 6754, "missing": 209, "mismatch": 186, "unnamed": 175, "trca": 92}, {"date": "2026-08-17", "osm_date": "2026-08-17", "source": "attic", "city": 1754, "osm_rings": 6758, "missing": 207, "mismatch": 186, "unnamed": 175, "trca": 92}, {"date": "2026-08-24", "osm_date": "2026-08-24", "source": "attic", "city": 1754, "osm_rings": 6758, "missing": 206, "mismatch": 186, "unnamed": 174, "trca": 92}, {"date": "2026-08-31", "osm_date": "2026-08-31", "source": "attic", "city": 1754, "osm_rings": 6762, "missing": 205, "mismatch": 186, "unnamed": 173, "trca": 92}, {"date": "2026-09-07", "osm_date": "2026-09-07", "source": "attic", "city": 1754, "osm_rings": 6783, "missing": 188, "mismatch": 187, "unnamed": 161, "trca": 92}, {"date": "2026-09-14", "osm_date": "2026-09-14", "source": "attic", "city": 1754, "osm_rings": 6765, "missing": 187, "mismatch": 186, "unnamed": 161, "trca": 92}, {"date": "2026-09-21", "osm_date": "2026-09-21", "source": "attic", "city": 1754, "osm_rings": 6774, "missing": 185, "mismatch": 185, "unnamed": 160, "trca": 92}, {"date": "2026-09-28", "osm_date": "2026-09-28", "source": "attic", "city": 1754, "osm_rings": 6811, "missing": 168, "mismatch": 182, "unnamed": 160, "trca": 92}, {"date": "2026-09-30", "osm_date": "2026-09-30", "source": "live", "missing": 170, "mismatch": 180, "unnamed": 147, "trca": 92, "city": 1756, "osm_rings": 6815}]</script>
+</main>
+</body>
+</html>
