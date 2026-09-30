@@ -20,7 +20,7 @@ import json
 import os
 import re
 import time
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 import requests
@@ -106,9 +106,8 @@ def _load_osm():
                 continue
             with open(config.OSM_CACHE_PATH, "w", encoding="utf-8") as f:
                 json.dump(data, f)
-            today = date.today().isoformat()
-            _save_fetch(today, url)
-            return data, today, False
+            _save_fetch(date.today().isoformat(), url)
+            return data, _data_date(data) or date.today().isoformat(), False
 
     # Nothing answered. Ask why before deciding what it means: no link is not a
     # failed build -- the run may as well not have happened -- while a healthy
@@ -158,17 +157,45 @@ def _try_overpass(url, query):
         print(f"  {host}: {count:,} elements, under the "
               f"{config.OSM_MIN_ELEMENTS:,} floor -- ignoring this reply")
         return None
+    base = _osm_base(data)
+    if base and datetime.now(timezone.utc) - base > timedelta(days=config.OSM_MAX_AGE_DAYS):
+        # Nor is a full reply proof of a current one. A lagging mirror answers
+        # the query in full from data months old, and the page would present
+        # that as this week's OSM.
+        print(f"  {host}: OSM data from {base:%Y-%m-%d %H:%MZ}, older than "
+              f"{config.OSM_MAX_AGE_DAYS} days -- ignoring this reply")
+        return None
     print(f"  {host}: {count:,} elements in {time.time() - started:.0f}s")
     return data
 
 
 def _load_cache():
-    """(data, fetch_date) for the cached Overpass reply, or None."""
+    """(data, data_date) for the cached Overpass reply, or None.
+
+    Dated by the OSM data it holds, not by when it was fetched: a reply fetched
+    yesterday from a lagging mirror is still May's OSM, and the page prints
+    this date as the one the diff is against.
+    """
     if not os.path.isfile(config.OSM_CACHE_PATH):
         return None
     with open(config.OSM_CACHE_PATH, encoding="utf-8") as f:
         data = json.load(f)
-    return data, _cache_date()
+    return data, _data_date(data) or _cache_date()
+
+
+def _osm_base(data):
+    """The reply's own osm3s.timestamp_osm_base -- the last minutely diff the
+    answering instance had applied -- as an aware datetime, or None."""
+    stamp = ((data.get("osm3s") or {}).get("timestamp_osm_base") or "").strip()
+    try:
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _data_date(data):
+    base = _osm_base(data)
+    return base.date().isoformat() if base else None
 
 
 def _cache_date():

@@ -108,6 +108,37 @@ def test_an_implausibly_small_reply_is_not_accepted(paths, monkeypatch):
     assert len(data["elements"]) == len(GOOD["elements"])
 
 
+def _stamped(stamp):
+    return {**GOOD, "osm3s": {"timestamp_osm_base": stamp}}
+
+
+def test_a_reply_from_months_old_data_is_not_accepted(paths, monkeypatch):
+    # overpass.private.coffee answered 2026-09-29 in full, with OSM as of
+    # 2026-05-06. It looked like success and the page showed May as this week.
+    monkeypatch.setattr(config, "OVERPASS_URLS",
+                        ("https://lagging.example/api", "https://good.example/api"))
+    now = compare.datetime.now(compare.timezone.utc)
+    fresh = (now - compare.timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    post = _post({"lagging.example": FakeResponse(_stamped("2026-05-06T03:25:00Z")),
+                  "good.example": FakeResponse(_stamped(fresh))})
+    monkeypatch.setattr(compare.requests, "post", post)
+
+    _data, osm_date, from_cache = compare._load_osm()
+    assert from_cache is False
+    assert osm_date == fresh[:10], "dated by the data, not by the fetch"
+    assert [u.split("/")[2] for u in post.calls] == ["lagging.example", "good.example"]
+
+
+def test_a_cached_reply_is_dated_by_its_data_not_its_fetch(paths, monkeypatch):
+    # The sidecar says fetched yesterday; the data inside says May. May is what
+    # the page must print.
+    with open(config.OSM_CACHE_PATH, "w", encoding="utf-8") as f:
+        json.dump(_stamped("2026-05-06T03:25:00Z"), f)
+    with open(config.OSM_FETCH_PATH, "w", encoding="utf-8") as f:
+        json.dump({"fetched": "2026-09-29", "mirror": "lagging.example"}, f)
+    assert compare._load_cache()[1] == "2026-05-06"
+
+
 def test_a_good_fetch_records_when_and_where_it_came_from(paths, monkeypatch):
     monkeypatch.setattr(config, "OVERPASS_URLS", ("https://good.example/api",))
     monkeypatch.setattr(compare.requests, "post",

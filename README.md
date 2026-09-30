@@ -187,6 +187,15 @@ Measured 2026-08-17 with the real query, from this laptop:
 | `overpass.osm.jp` | 0.8s | SSL failure |
 | `overpass.osm.ch` | 0.9s | 200, **0 elements** (wrong region) |
 
+A full reply is not proof of a current one either. Every Overpass reply
+states its own data date (`osm3s.timestamp_osm_base`), and one more than
+`OSM_MAX_AGE_DAYS` (3) old is refused like a 504. That check exists because
+`overpass.private.coffee`, the fallback in the table above, turned out to answer
+from a pool of lagging backends: on 2026-09-28 and 09-29 it served OSM as of
+07-15 and 05-06, and both weeks' gap pages presented that as current. It was
+dropped from `OVERPASS_URLS` the same day, leaving `overpass-api.de` alone; a
+cached reply is likewise dated by the data it holds, not by when it was fetched.
+
 If it still cannot reach anyone, the cache is used &mdash; a stale gap page beats
 none &mdash; but the run stops being quiet about it. The page prints the OSM
 data's own date beside the City date and carries a warning banner, and `update`

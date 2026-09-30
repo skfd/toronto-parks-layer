@@ -97,9 +97,14 @@ AREA_ID_KEY = "AREA_ID"       # stable city identifier for the polygon
 # answers a Toronto bbox with a perfectly valid empty result, which would read
 # as "every City park is missing from OSM". OSM_MIN_ELEMENTS is the guard
 # against any mirror that ever does that.
+#
+# overpass.private.coffee was dropped on 2026-09-29. It answered, but from a
+# pool of backends months behind: replies on consecutive days carried data from
+# 2026-05-06, 07-15 and 07-28, while overpass-api.de was two minutes behind.
+# A stale reply looks exactly like success, so the age check below refuses one
+# from any mirror, and a mirror that is usually stale is worse than none.
 OVERPASS_URLS = (
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter",
 )
 OVERPASS_TIMEOUT = 300
 OVERPASS_ROUNDS = 3
@@ -107,6 +112,10 @@ OVERPASS_ROUND_WAIT = 60
 # Floor on a reply's element count. The query returns ~6,700; anything under a
 # few thousand is a wrong-region or truncated answer, not a week's mapping.
 OSM_MIN_ELEMENTS = 3000
+# Oldest OSM data a reply may carry (its osm3s.timestamp_osm_base) and still be
+# compared against. A healthy instance is minutes behind; a week-old reply is
+# no fresher than the cache it would replace, so it counts as no answer.
+OSM_MAX_AGE_DAYS = 3
 # Overpass rejects the default requests User-Agent (HTTP 406); identify the tool.
 USER_AGENT = "toronto-parks-layer/1.0 (https://github.com/skfd/toronto-parks-layer)"
 # Toronto bounding box (S, W, N, E), a touch larger than the city. OSM areas
