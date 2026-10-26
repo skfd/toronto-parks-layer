@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toronto Parks &mdash; label review</title>
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  #map { position: absolute; inset: 0; }
+  #info {
+    position: absolute; z-index: 1000; top: 10px; left: 50px;
+    background: rgba(255,255,255,.92); padding: 8px 12px; border-radius: 6px;
+    font: 13px/1.45 system-ui, sans-serif; box-shadow: 0 1px 5px rgba(0,0,0,.35);
+    max-width: 320px;
+  }
+  #info b { font-size: 15px; }
+  #info .mode { font-weight: 600; }
+  #info .gated { color: #b26a00; }
+  #info .showall { color: #1565c0; }
+  #info .row { margin-top: 2px; }
+  #info .muted { color: #555; }
+  #info code { background: #eee; padding: 0 3px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="info">
+  <div>Zoom <b id="z">&ndash;</b> <span id="native" class="muted"></span></div>
+  <div class="row mode" id="mode"></div>
+  <div class="row muted" id="center"></div>
+  <div class="row muted">Native tiles z13&ndash;17 &middot; switch at z15</div>
+</div>
+<script>
+  var SHOW_ALL_MIN = 15, NATIVE_MAX = 17, NATIVE_MIN = 13;
+
+  // Restore the view from the URL (OSM-style #map=zoom/lat/lng) so a refresh
+  // or shared link reopens the same place.
+  function readHash() {
+    var m = /^#map=(\d{1,2})\/(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)$/
+      .exec(location.hash);
+    return m ? { zoom: +m[1], center: [+m[2], +m[3]] } : null;
+  }
+
+  var map = L.map("map", { minZoom: 11, maxZoom: 19 });
+  var view = readHash();
+  map.setView(view ? view.center : [43.7001, -79.3845], view ? view.zoom : 14);
+
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
+
+  L.tileLayer("tiles/raster/{z}/{x}/{y}.png", {
+    minZoom: 13,
+    maxNativeZoom: NATIVE_MAX,
+    maxZoom: 19,
+  }).addTo(map);
+
+  function update() {
+    var z = map.getZoom();
+    document.getElementById("z").textContent = z;
+
+    var native;
+    if (z < NATIVE_MIN) native = "(no raster below z13)";
+    else if (z > NATIVE_MAX) native = "(overzoomed from z17)";
+    else native = "(native)";
+    document.getElementById("native").textContent = native;
+
+    var renderZ = Math.min(Math.max(z, NATIVE_MIN), NATIVE_MAX);
+    var mode = document.getElementById("mode");
+    if (renderZ >= SHOW_ALL_MIN) {
+      mode.className = "row mode showall";
+      mode.innerHTML = "Show-all (z" + renderZ + "): every park labelled; "
+        + "small parks <b>below</b> the polygon, big parks centred.";
+    } else {
+      mode.className = "row mode gated";
+      mode.innerHTML = "Gated (z" + renderZ + "): only parks big enough to see, "
+        + "centred, overlaps dropped.";
+    }
+
+    var c = map.getCenter();
+    document.getElementById("center").textContent =
+      "Center " + c.lat.toFixed(4) + ", " + c.lng.toFixed(4);
+
+    var hash = "#map=" + z + "/" + c.lat.toFixed(5) + "/" + c.lng.toFixed(5);
+    if (hash !== location.hash) {
+      history.replaceState(null, "", hash);
+    }
+  }
+
+  map.on("zoomend moveend", update);
+  update();
+</script>
+</body>
+</html>
