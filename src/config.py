@@ -124,9 +124,15 @@ TORONTO_BBOX = (43.58, -79.64, 43.86, -79.12)
 # OSM tags treated as a park-like area (the OSM analogue of INCLUDE_AREA_CLASSES).
 OSM_AREA_TAGS = {
     "leisure": ("park", "garden", "nature_reserve", "golf_course", "common"),
-    "landuse": ("cemetery", "recreation_ground"),
+    "landuse": ("cemetery", "recreation_ground", "allotments"),
     "amenity": ("grave_yard",),
 }
+# How much of a City polygon OSM has to cover for it to count as mapped. Set from
+# the rows that flip between thresholds on 2026-11-04: under 0.1 the only cover
+# is a small garden on a square (Albert Campbell Square, Pier 27 Promenade Park);
+# at 0.15 real partial matches start to go (Crescentwood Park, typed "Cresentwood"
+# in OSM, would read as missing rather than as the mismatch it is).
+MIN_OVERLAP_SHARE = 0.1
 OSM_CACHE_PATH = os.path.join(DATA_DIR, "osm-parks.json")
 # When the cached Overpass reply was fetched, and from where. The cache file's
 # own mtime cannot say this -- a fallback run rewrites nothing.

@@ -2,3 +2,4 @@ addressvault
 requests
 Pillow
 ijson
+shapely>=2.1

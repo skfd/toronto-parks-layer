@@ -33,7 +33,8 @@ its page redirects to Green Spaces.)
   ("mismatch") &mdash; on an interactive map and a filterable table, with
   OSM / iD / JOSM links per row (the JOSM link needs JOSM running with
   Preferences &rarr; Remote Control enabled). OSM areas
-  are pulled from Overpass; matching is by spatial overlap (see
+  are pulled from Overpass; matching is by the area the polygons really share,
+  with `landuse=allotments` accepted only for the City's gardens (see
   [`src/compare.py`](src/compare.py)). Its
   [history page](https://skfd.github.io/toronto-parks-layer/gaps/history.html)
   charts those counts over time, one point per weekly run.

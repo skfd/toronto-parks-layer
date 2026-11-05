@@ -208,6 +208,134 @@ def test_the_cache_date_falls_back_to_the_file_mtime(paths, monkeypatch):
     assert compare._cache_date().startswith("20")
 
 
+# --- matching ---------------------------------------------------------------
+#
+# Reported from the live page: Walmer Rd Parkette and Bishop Allotment Gardens
+# both showed as missing with the area plainly mapped underneath them.
+
+X0, Y0 = -79.409, 43.676       # the Walmer Road neighbourhood
+MX, MY = 1 / 80500, 1 / 111200  # degrees per metre here
+
+
+def _ring(*corners):
+    """A closed ring from (x, y) corners given in metres from X0, Y0."""
+    pts = [(X0 + x * MX, Y0 + y * MY) for x, y in corners]
+    return pts + pts[:1]
+
+
+def _box(x, y, w, h):
+    return _ring((x, y), (x + w, y), (x + w, y + h), (x, y + h))
+
+
+def _ell(x, y, size, arm):
+    """An L: its centre of area is outside the L itself."""
+    return _ring((x, y), (x + size, y), (x + size, y + arm), (x + arm, y + arm),
+                 (x + arm, y + size), (x, y + size))
+
+
+def _osm(oid, ring, **tags):
+    return {"type": "way", "id": oid, "tags": tags,
+            "geometry": [{"lon": x, "lat": y} for x, y in ring]}
+
+
+def _gap(tmp_path, monkeypatch, name, ring, *osm, cls="Park"):
+    """The gap feature one City polygon lands in, or None if it is matched."""
+    slim = tmp_path / "slim.geojsonl"
+    slim.write_text(json.dumps({
+        "type": "Feature",
+        "properties": {"name": name, "class": cls, "area_id": 1},
+        "geometry": {"type": "Polygon", "coordinates": [[list(p) for p in ring]]},
+    }) + "\n", encoding="utf-8")
+    monkeypatch.setattr(config, "SLIM_PATH", str(slim))
+    gaps, _counts = compare._match(list(compare._city_features()),
+                                   compare._osm_rings({"elements": list(osm)}))
+    return gaps[0]["properties"] if gaps else None
+
+
+def test_a_sliver_of_a_parkette_matches_at_real_coordinates(tmp_path, monkeypatch):
+    # Walmer Rd Parkette is 15 x 44 m. Summed raw at lon/lat, its centroid came
+    # out 25 m outside its own bounding box.
+    sliver = _ring((0, 0), (15, 30), (12, 44), (2, 20))
+    osm = _osm(1, _box(-10, -10, 40, 70), leisure="park", name="Walmer Road Parkette")
+    assert _gap(tmp_path, monkeypatch, "Walmer Rd Parkette", sliver, osm) is None
+
+
+def test_two_l_shapes_overlap_though_neither_centre_is_inside(tmp_path, monkeypatch):
+    # Humber Bay Shores and Giovanni Caboto read as missing this way, 90% covered.
+    osm = _osm(1, _ell(0, 0, 300, 40), leisure="park")
+    gap = _gap(tmp_path, monkeypatch, "Bent Park", _ell(0, 0, 300, 40), osm)
+    assert gap["status"] == "unnamed"
+
+
+def test_a_tennis_club_does_not_take_the_match_from_its_park(tmp_path, monkeypatch):
+    # "Pine Point Park" was reported against "Pine Point Tennis Club".
+    park = _osm(1, _box(0, 0, 200, 200), leisure="park")
+    club = _osm(2, _box(90, 90, 20, 20), landuse="recreation_ground",
+                name="Pine Point Tennis Club")
+    gap = _gap(tmp_path, monkeypatch, "Pine Point Park", _box(0, 0, 200, 200), club, park)
+    assert gap["status"] == "unnamed"
+
+
+def test_a_same_named_ring_wins_over_a_bigger_overlap(tmp_path, monkeypatch):
+    other = _osm(1, _box(0, 0, 200, 200), leisure="park", name="Norris Crescent Parkette")
+    same = _osm(2, _box(0, 0, 40, 40), leisure="park", name="Mimico Waterfront Park")
+    assert _gap(tmp_path, monkeypatch, "Mimico Waterfront Park",
+                _box(0, 0, 200, 200), other, same) is None
+
+
+def test_a_same_named_ring_beside_the_polygon_still_matches(tmp_path, monkeypatch):
+    # Sits in the crook of the L: the bboxes overlap, the polygons do not.
+    osm = _osm(1, _ell(0, 0, 300, 40), leisure="park", name="Fairford Parkette")
+    assert _gap(tmp_path, monkeypatch, "Fairford Parkette",
+                _box(100, 100, 50, 50), osm) is None
+
+
+def test_a_small_garden_does_not_make_a_big_polygon_mapped(tmp_path, monkeypatch):
+    garden = _osm(1, _box(90, 90, 20, 20), leisure="garden", name="Peace Garden")
+    gap = _gap(tmp_path, monkeypatch, "Nathan Phillips Square", _box(0, 0, 200, 200), garden)
+    assert gap["status"] == "missing"
+
+
+def test_several_rings_can_cover_a_polygon_between_them(tmp_path, monkeypatch):
+    halves = [_osm(i, _box(i * 25, 0, 20, 200), leisure="garden") for i in range(4)]
+    gap = _gap(tmp_path, monkeypatch, "Four Winds", _box(0, 0, 500, 200), *halves)
+    assert gap["status"] == "unnamed"
+
+
+def test_an_allotment_answers_for_a_city_garden(tmp_path, monkeypatch):
+    # The City's allotments are "Open Green Space"; OSM's are landuse=allotments.
+    osm = _osm(1, _box(0, 0, 100, 100), landuse="allotments",
+               name="Bishop Allotment Gardens")
+    assert _gap(tmp_path, monkeypatch, "Bishop Allotment Gardens", _box(0, 0, 100, 100),
+                osm, cls="Open Green Space") is None
+
+
+def test_an_allotment_does_not_answer_for_a_park(tmp_path, monkeypatch):
+    # West Deane Park holds a "Community Garden"; that is not the park.
+    osm = _osm(1, _box(0, 0, 100, 100), landuse="allotments", name="Community Garden")
+    gap = _gap(tmp_path, monkeypatch, "West Deane Park", _box(0, 0, 100, 100), osm)
+    assert gap["status"] == "missing"
+
+
+def test_a_way_that_doubles_back_is_not_a_ring():
+    there_and_back = [{"lon": X0, "lat": Y0}, {"lon": X0 + 0.001, "lat": Y0},
+                      {"lon": X0, "lat": Y0}]
+    assert compare._make_ring(there_and_back, {}, "way", 1) is None
+
+
+@pytest.mark.parametrize("city, osm", [
+    ("Walmer Rd Parkette", "Walmer Road Parkette"),
+    ("174 Soudan Avenue Park", "174 Soudan Ave Park"),
+    ("Asterfield - Plumrose Blvd Parkette", "Asterfield-Plumrose Boulevard Parkette"),
+])
+def test_street_abbreviations_are_not_a_mismatch(city, osm):
+    assert compare._norm(city) == compare._norm(osm)
+
+
+def test_st_is_left_alone_because_it_is_usually_saint():
+    assert compare._norm("St. James Park") != compare._norm("Street James Park")
+
+
 # --- what the reader sees ---------------------------------------------------
 
 def test_a_stale_comparison_says_so_on_the_page():

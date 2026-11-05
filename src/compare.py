@@ -1,7 +1,7 @@
 """Compare the City Green Spaces polygons against OSM park areas.
 
 Pulls park-like areas from OpenStreetMap (Overpass) within Toronto, then for
-each kept City polygon checks whether an OSM area overlaps it. The result is
+each kept City polygon checks whether an OSM area covers it. The result is
 written to data/gaps.geojson:
 
   * "missing"  -- no OSM park area overlaps the City polygon (add it to OSM);
@@ -10,9 +10,9 @@ written to data/gaps.geojson:
   * "trca"     -- a numbered TRCA Lands parcel that is any of the above; these
                   are not real park names, so they get their own category.
 
-Overlap is tested with pure-Python centroid-in-polygon checks (both
-directions) after a bounding-box prefilter -- enough for a review tool, no GIS
-dependency. A flaky Overpass falls back to the cached response, but only after
+Overlap is the area two polygons really share, measured with shapely after a
+bounding-box prefilter -- see _find_match for why a centre-point test is not
+enough. A flaky Overpass falls back to the cached response, but only after
 every mirror has been tried several times -- see _load_osm.
 """
 
@@ -25,6 +25,8 @@ from urllib.parse import urlsplit
 
 import requests
 from addressvault import net
+from shapely import make_valid
+from shapely.geometry import Polygon, shape
 
 from src import config, history
 
@@ -218,12 +220,12 @@ def _osm_rings(data):
     """Flatten OSM ways and relation outer members into matchable rings."""
     rings = []
     for el in data.get("elements", []):
-        name = (el.get("tags") or {}).get("name")
+        tags = el.get("tags") or {}
         if el.get("type") == "way":
-            rings.append(_make_ring(el.get("geometry"), name, "way", el["id"]))
+            rings.append(_make_ring(el.get("geometry"), tags, "way", el["id"]))
         elif el.get("type") == "relation":
             for loop in _relation_outer_loops(el):
-                rings.append(_make_ring(loop, name, "relation", el["id"]))
+                rings.append(_make_ring(loop, tags, "relation", el["id"]))
     return [r for r in rings if r]
 
 
@@ -270,19 +272,22 @@ def _pt(p):
     return (p["lat"], p["lon"])
 
 
-def _make_ring(geom, name, otype, oid):
+def _make_ring(geom, tags, otype, oid):
     if not geom:
         return None
     pts = [(p["lon"], p["lat"]) for p in geom if "lon" in p and "lat" in p]
     if len(pts) < 3:
         return None
+    outline = _valid(Polygon(pts))
+    if outline.is_empty:
+        return None
     return {
-        "pts": pts,
-        "name": name,
+        "shape": outline,
+        "name": tags.get("name"),
+        "allotment": tags.get("landuse") == "allotments",
         "otype": otype,
         "oid": oid,
-        "bbox": _bbox(pts),
-        "centroid": _centroid(pts),
+        "bbox": outline.bounds,
     }
 
 
@@ -292,32 +297,18 @@ def _city_features():
     with open(config.SLIM_PATH, encoding="utf-8") as f:
         for line in f:
             feat = json.loads(line)
-            outers = _outer_rings(feat["geometry"])
-            if not outers:
+            outline = _valid(shape(feat["geometry"]))
+            if outline.is_empty:
                 continue
-            allpts = [p for ring in outers for p in ring]
             props = feat.get("properties") or {}
             yield {
                 "name": props.get("name"),
                 "cls": props.get("class"),
                 "area_id": props.get("area_id"),
                 "geom": feat["geometry"],
-                "outers": outers,
-                "bbox": _bbox(allpts),
-                "centroid": _centroid(max(outers, key=_ring_area)),
+                "shape": outline,
+                "bbox": outline.bounds,
             }
-
-
-def _outer_rings(geom):
-    """Outer ring(s) as lists of (lon, lat). Polygon -> 1, MultiPolygon -> many."""
-    coords = geom.get("coordinates")
-    if not coords:
-        return []
-    if geom["type"] == "Polygon":
-        return [[tuple(p) for p in coords[0]]]
-    if geom["type"] == "MultiPolygon":
-        return [[tuple(p) for p in poly[0]] for poly in coords if poly]
-    return []
 
 
 # --- Matching ---------------------------------------------------------------
@@ -347,27 +338,50 @@ def _is_trca(name):
     return _norm(name).startswith("trca lands")
 
 
+def _is_garden(c):
+    """A City polygon an allotment can stand in for.
+
+    The City has no garden class: its allotments are "Open Green Space" with
+    "Allotment Gardens" or "Garden Plots" in the name.
+    """
+    return c["cls"] == "Open Green Space" or bool(_GARDEN_NAME.search(c["name"] or ""))
+
+
 def _find_match(c, rings):
-    """An OSM ring overlapping the City polygon, preferring a same-named one."""
+    """The OSM ring that matches the City polygon, or None.
+
+    Decided by the area the polygons really share. Testing centre points instead
+    fails both ways: a park wrapped around a corner has its centre outside its
+    own outline, and a tennis club's centre sits inside the park around it, so
+    the club passes while the park does not.
+
+    A same-named ring settles it at any overlap, and even at none if the bboxes
+    touch. Otherwise OSM has to cover MIN_OVERLAP_SHARE of the City polygon, and
+    the ring covering the most of it is the match.
+    """
     cnorm = _norm(c["name"])
+    garden = _is_garden(c)
+    area = c["shape"].area
     best = None
+    best_share = covered = 0.0
     name_fallback = None
     for r in rings:
         if not _bbox_overlap(c["bbox"], r["bbox"]):
             continue
-        same_name = bool(cnorm) and _norm(r["name"]) == cnorm
-        if _point_in_ring(c["centroid"], r["pts"]) or any(
-            _point_in_ring(r["centroid"], outer) for outer in c["outers"]
-        ):
-            if same_name:
+        if r["allotment"] and not garden:
+            continue  # a community plot inside a park is not that park
+        share = c["shape"].intersection(r["shape"]).area / area
+        if bool(cnorm) and _norm(r["name"]) == cnorm:
+            if share > 0:
                 return r  # exact name match settles it
-            if best is None or (r["name"] and not best["name"]):
-                best = r  # otherwise prefer a named ring over an unnamed one
-        elif same_name and name_fallback is None:
-            # Centroid tests missed (concave / multipolygon), but a same-named
-            # area overlaps this polygon's bbox -- almost certainly the match.
-            name_fallback = r
-    return best or name_fallback
+            if name_fallback is None:
+                name_fallback = r
+        covered += share
+        if share > best_share:
+            best, best_share = r, share
+    if name_fallback:
+        return name_fallback
+    return best if covered >= config.MIN_OVERLAP_SHARE else None
 
 
 def _gap_feature(c, status, match):
@@ -396,58 +410,13 @@ def _write_gaps(gaps):
 
 # --- Geometry helpers -------------------------------------------------------
 
-def _bbox(pts):
-    xs = [p[0] for p in pts]
-    ys = [p[1] for p in pts]
-    return (min(xs), min(ys), max(xs), max(ys))
+def _valid(geom):
+    """The polygon as an area shapely can intersect; empty if it has none."""
+    return make_valid(geom, method="structure", keep_collapsed=False)
 
 
 def _bbox_overlap(a, b):
     return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
-
-
-def _centroid(pts):
-    """Area-weighted polygon centroid (shoelace); mean for degenerate rings."""
-    n = len(pts)
-    area = cx = cy = 0.0
-    for i in range(n):
-        x0, y0 = pts[i]
-        x1, y1 = pts[(i + 1) % n]
-        cross = x0 * y1 - x1 * y0
-        area += cross
-        cx += (x0 + x1) * cross
-        cy += (y0 + y1) * cross
-    if area == 0:
-        return (sum(p[0] for p in pts) / n, sum(p[1] for p in pts) / n)
-    area *= 0.5
-    return (cx / (6 * area), cy / (6 * area))
-
-
-def _ring_area(pts):
-    n = len(pts)
-    area = 0.0
-    for i in range(n):
-        x0, y0 = pts[i]
-        x1, y1 = pts[(i + 1) % n]
-        area += x0 * y1 - x1 * y0
-    return abs(area) / 2
-
-
-def _point_in_ring(pt, pts):
-    """Ray-casting point-in-polygon test."""
-    x, y = pt
-    n = len(pts)
-    inside = False
-    j = n - 1
-    for i in range(n):
-        xi, yi = pts[i]
-        xj, yj = pts[j]
-        if (yi > y) != (yj > y):
-            xint = (xj - xi) * (y - yi) / (yj - yi) + xi
-            if x < xint:
-                inside = not inside
-        j = i
-    return inside
 
 
 # The City appends a borough to disambiguate duplicate names ("Oriole Park -
@@ -458,16 +427,22 @@ _BOROUGH_SUFFIX = re.compile(
 # Generic feature words the City and OSM disagree on appending ("Sugar Beach"
 # vs "Sugar Beach Park", "St. James Cemetery" vs "... Cemetery and Crematorium").
 _GENERIC_SUFFIX = re.compile(r"\s+(?:and\s+)?(?:park|cemetery|crematorium|club)$")
+# Street words the City and OSM abbreviate differently ("Walmer Rd Parkette" vs
+# "Walmer Road Parkette"). "St" stays out of it: it is usually Saint here.
+_STREET_WORDS = {"rd": "road", "ave": "avenue", "blvd": "boulevard",
+                 "dr": "drive", "cres": "crescent"}
+_GARDEN_NAME = re.compile(r"garden|allotment|plot", re.IGNORECASE)
 
 
 def _norm(name):
     """Loose match key: drop the artefacts City and OSM names differ on.
 
     Lowercases and reduces to single-spaced alphanumerics, and additionally
-    strips the City's " - <Borough>" suffix, unifies "&"/"and", drops a leading
-    article, and trims generic trailing feature words -- so spatially matched
-    parks aren't flagged as mismatches over naming convention alone. Affects
-    matching only; the displayed name keeps the raw City data.
+    strips the City's " - <Borough>" suffix, unifies "&"/"and", spells out street
+    abbreviations, drops a leading article, and trims generic trailing feature
+    words -- so spatially matched parks aren't flagged as mismatches over naming
+    convention alone. Affects matching only; the displayed name keeps the raw
+    City data.
     """
     if not name:
         return ""
@@ -476,6 +451,7 @@ def _norm(name):
     s = name.lower().replace("&", " and ").replace("'", "").replace("’", "")
     s = _BOROUGH_SUFFIX.sub("", s)
     s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    s = " ".join(_STREET_WORDS.get(word, word) for word in s.split())
     s = re.sub(r"^the\s+", "", s)
     while True:
         trimmed = _GENERIC_SUFFIX.sub("", s).strip()

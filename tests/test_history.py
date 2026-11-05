@@ -14,6 +14,7 @@ import sys
 from datetime import date
 
 import pytest
+from shapely.geometry import Polygon
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -108,10 +109,10 @@ def test_backfill_skips_dates_on_record_and_stops_on_no_answer(paths, monkeypatc
 
 def test_backfill_counts_gaps_against_the_city_polygons(paths, monkeypatch):
     square = [(-79.40, 43.70), (-79.39, 43.70), (-79.39, 43.71), (-79.40, 43.71)]
+    outline = Polygon(square)
     city = [{"name": "Test Park", "cls": "Park", "area_id": 1,
              "geom": {"type": "Polygon", "coordinates": [list(map(list, square))]},
-             "outers": [square], "bbox": compare._bbox(square),
-             "centroid": compare._centroid(square)}]
+             "shape": outline, "bbox": outline.bounds}]
     monkeypatch.setattr(compare, "_city_features", lambda: iter(city))
     monkeypatch.setattr(compare, "_try_overpass",
                         _fake_overpass([{"elements": []}]))
