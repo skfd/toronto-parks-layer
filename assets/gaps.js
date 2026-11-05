@@ -4,7 +4,8 @@
   "use strict";
 
   var COLORS = {
-    missing: "#7048e8", mismatch: "#1c7ed6", unnamed: "#e8590c", trca: "#868e96",
+    missing: "#7048e8", mismatch: "#1c7ed6", unnamed: "#e8590c", retag: "#c2255c",
+    trca: "#868e96",
   };
   var PAD_M = 30;  // metres around a feature for the JOSM download box
   var JOSM = "http://127.0.0.1:8111/load_and_zoom";
@@ -174,6 +175,9 @@
     if (p.status === "mismatch") {
       h += "<br>OSM name: " + (p.osm_name ? esc(p.osm_name) : "<em>none</em>");
     }
+    if (p.status === "retag") {
+      h += "<br>Already leisure=park: remove landuse=recreation_ground";
+    }
     var links = osmPairHtml(f);
     if (links) { h += "<br>" + links; }
     return h;
@@ -233,6 +237,7 @@
       missing: document.getElementById("show-missing"),
       mismatch: document.getElementById("show-mismatch"),
       unnamed: document.getElementById("show-unnamed"),
+      retag: document.getElementById("show-retag"),
       trca: document.getElementById("show-trca"),
     };
     var filter = document.getElementById("filter");

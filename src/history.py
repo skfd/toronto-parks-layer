@@ -25,7 +25,7 @@ from addressvault import net
 
 from src import config
 
-FIELDS = ("missing", "mismatch", "unnamed", "trca", "city", "osm_rings")
+FIELDS = ("missing", "mismatch", "unnamed", "retag", "trca", "city", "osm_rings")
 
 
 def record(summary, day=None):

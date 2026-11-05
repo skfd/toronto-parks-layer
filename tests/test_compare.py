@@ -317,6 +317,26 @@ def test_an_allotment_does_not_answer_for_a_park(tmp_path, monkeypatch):
     assert gap["status"] == "missing"
 
 
+def test_a_park_also_tagged_recreation_ground_is_flagged(tmp_path, monkeypatch):
+    # Way 123532349 was both, until changeset 191476131 dropped the landuse.
+    osm = _osm(1, _box(0, 0, 100, 100), leisure="park",
+               landuse="recreation_ground", name="Terry Fox Park")
+    gap = _gap(tmp_path, monkeypatch, "Terry Fox Park", _box(0, 0, 100, 100), osm)
+    assert gap["status"] == "retag"
+    assert gap["osm_url"].endswith("/way/1")
+
+
+def test_the_double_tag_is_flagged_ahead_of_a_missing_name(tmp_path, monkeypatch):
+    osm = _osm(1, _box(0, 0, 100, 100), leisure="park", landuse="recreation_ground")
+    gap = _gap(tmp_path, monkeypatch, "Eastview Park", _box(0, 0, 100, 100), osm)
+    assert gap["status"] == "retag"
+
+
+def test_a_plain_recreation_ground_is_not_double_tagged(tmp_path, monkeypatch):
+    osm = _osm(1, _box(0, 0, 100, 100), landuse="recreation_ground", name="Terry Fox Park")
+    assert _gap(tmp_path, monkeypatch, "Terry Fox Park", _box(0, 0, 100, 100), osm) is None
+
+
 def test_a_way_that_doubles_back_is_not_a_ring():
     there_and_back = [{"lon": X0, "lat": Y0}, {"lon": X0 + 0.001, "lat": Y0},
                       {"lon": X0, "lat": Y0}]

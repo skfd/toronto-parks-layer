@@ -94,6 +94,7 @@ def _build_gaps_page(build_date):
         "{{MISSING_COUNT}}": f"{summary.get('missing', 0):,}",
         "{{MISMATCH_COUNT}}": f"{summary.get('mismatch', 0):,}",
         "{{UNNAMED_COUNT}}": f"{summary.get('unnamed', 0):,}",
+        "{{RETAG_COUNT}}": f"{summary.get('retag', 0):,}",
         "{{TRCA_COUNT}}": f"{summary.get('trca', 0):,}",
         "{{CITY_COUNT}}": f"{summary.get('city', 0):,}",
         "{{OSM_COUNT}}": f"{summary.get('osm_rings', 0):,}",

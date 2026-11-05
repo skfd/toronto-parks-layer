@@ -29,8 +29,10 @@ its page redirects to Green Spaces.)
 - A **gap-review page** ([`/gaps/`](https://skfd.github.io/toronto-parks-layer/gaps/))
   that compares the City polygons against
   park areas already in OpenStreetMap and lists the gaps &mdash; City parks with
-  no overlapping OSM area ("missing") and matched parks whose OSM name differs
-  ("mismatch") &mdash; on an interactive map and a filterable table, with
+  no overlapping OSM area ("missing"), matched parks whose OSM name differs
+  ("mismatch"), and matched parks tagged both `leisure=park` and
+  `landuse=recreation_ground` ("retag") &mdash; on an interactive map and a
+  filterable table, with
   OSM / iD / JOSM links per row (the JOSM link needs JOSM running with
   Preferences &rarr; Remote Control enabled). OSM areas
   are pulled from Overpass; matching is by the area the polygons really share,

@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src import compare, config, history, site  # noqa: E402
 
-SUMMARY = {"missing": 120, "mismatch": 30, "unnamed": 45, "trca": 5,
+SUMMARY = {"missing": 120, "mismatch": 30, "unnamed": 45, "retag": 3, "trca": 5,
            "city": 1745, "osm_rings": 6690, "osm_date": "2026-09-28",
            "osm_stale": False}
 
@@ -41,7 +41,8 @@ def test_a_live_run_appends_one_row_with_the_counts(paths):
     assert len(rows) == 1
     assert rows[0] == {"date": "2026-09-28", "osm_date": "2026-09-28",
                        "source": "live", "missing": 120, "mismatch": 30,
-                       "unnamed": 45, "trca": 5, "city": 1745, "osm_rings": 6690}
+                       "unnamed": 45, "retag": 3, "trca": 5, "city": 1745,
+                       "osm_rings": 6690}
 
 
 def test_a_second_run_the_same_day_replaces_the_first(paths):

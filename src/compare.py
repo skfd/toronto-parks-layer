@@ -7,6 +7,8 @@ written to data/gaps.geojson:
   * "missing"  -- no OSM park area overlaps the City polygon (add it to OSM);
   * "mismatch" -- one overlaps, but its (present) OSM name differs;
   * "unnamed"  -- one overlaps but the OSM area has no name (add one);
+  * "retag"    -- one overlaps but it is tagged both leisure=park and
+                  landuse=recreation_ground (drop the landuse);
   * "trca"     -- a numbered TRCA Lands parcel that is any of the above; these
                   are not real park names, so they get their own category.
 
@@ -48,7 +50,8 @@ def compare():
         json.dump(summary, f, indent=2)
     print(
         f"Gaps: {counts['missing']:,} missing, {counts['mismatch']:,} mismatch, "
-        f"{counts['unnamed']:,} unnamed OSM, {counts['trca']:,} TRCA"
+        f"{counts['unnamed']:,} unnamed OSM, {counts['retag']:,} to retag, "
+        f"{counts['trca']:,} TRCA"
     )
     if from_cache:
         print(f"NOTE: compared against cached OSM data from {osm_date}, "
@@ -285,6 +288,8 @@ def _make_ring(geom, tags, otype, oid):
         "shape": outline,
         "name": tags.get("name"),
         "allotment": tags.get("landuse") == "allotments",
+        "double_tagged": (tags.get("leisure") == "park"
+                          and tags.get("landuse") == "recreation_ground"),
         "otype": otype,
         "oid": oid,
         "bbox": outline.bounds,
@@ -315,11 +320,13 @@ def _city_features():
 
 def _match(city, rings):
     gaps = []
-    counts = {"missing": 0, "mismatch": 0, "unnamed": 0, "trca": 0}
+    counts = {"missing": 0, "mismatch": 0, "unnamed": 0, "retag": 0, "trca": 0}
     for c in city:
         match = _find_match(c, rings)
         if match is None:
             status = "missing"
+        elif match["double_tagged"]:
+            status = "retag"  # first, and any name gap shows up once it is fixed
         elif not match["name"]:
             status = "unnamed"
         elif _norm(match["name"]) != _norm(c["name"]):

@@ -28,6 +28,7 @@
     <div class="count missing"><strong>{{MISSING_COUNT}}</strong><span>missing in OSM</span></div>
     <div class="count mismatch"><strong>{{MISMATCH_COUNT}}</strong><span>name mismatches</span></div>
     <div class="count unnamed"><strong>{{UNNAMED_COUNT}}</strong><span>OSM area unnamed</span></div>
+    <div class="count retag"><strong>{{RETAG_COUNT}}</strong><span>double-tagged</span></div>
     <div class="count trca"><strong>{{TRCA_COUNT}}</strong><span>TRCA parcels</span></div>
     <div class="count"><strong>{{CITY_COUNT}}</strong><span>City polygons</span></div>
     <div class="count"><strong>{{OSM_COUNT}}</strong><span>OSM park areas</span></div>
@@ -50,6 +51,8 @@
           <input type="checkbox" id="show-mismatch" checked> Mismatch</label>
         <label><span class="swatch unnamed"></span>
           <input type="checkbox" id="show-unnamed" checked> Unnamed OSM</label>
+        <label><span class="swatch retag"></span>
+          <input type="checkbox" id="show-retag" checked> Double-tagged</label>
         <label><span class="swatch trca"></span>
           <input type="checkbox" id="show-trca"> TRCA lands</label>
         <input type="search" id="filter" placeholder="Filter by name...">
