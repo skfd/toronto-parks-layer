@@ -39,7 +39,10 @@ its page redirects to Green Spaces.)
   with `landuse=allotments` accepted only for the City's gardens (see
   [`src/compare.py`](src/compare.py)). Its
   [history page](https://skfd.github.io/toronto-parks-layer/gaps/history.html)
-  charts those counts over time, one point per weekly run.
+  charts those counts over time, one point per weekly run. Matched parks whose
+  outlines disagree are listed apart as "worth a look", most disputed first and
+  off by default. They are prompts to compare two shapes, not gaps, so they stay
+  out of the gap counts and the chart.
 
 All of it is published to GitHub Pages and rebuilt weekly.
 

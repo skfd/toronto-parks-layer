@@ -38,6 +38,7 @@ body.app { margin: 0; display: flex; flex-direction: column; }
 .count.unnamed { border-left: 4px solid #e8590c; }
 .count.retag { border-left: 4px solid #c2255c; }
 .count.trca { border-left: 4px solid #868e96; }
+.count.review { border-left: 4px solid #0c8599; }
 .count.meta-count {
   display: flex;
   align-items: center;
@@ -97,6 +98,7 @@ body.app { margin: 0; display: flex; flex-direction: column; }
 .swatch.unnamed { background: #e8590c; }
 .swatch.retag { background: #c2255c; }
 .swatch.trca { background: #868e96; }
+.swatch.review { background: #0c8599; }
 
 /* --- data table --- */
 #gap-table { font-size: .9rem; }
@@ -117,6 +119,9 @@ body.app { margin: 0; display: flex; flex-direction: column; }
 #gap-table .status-unnamed { color: #c2410c; font-weight: 600; }
 #gap-table .status-retag { color: #a61e4d; font-weight: 600; }
 #gap-table .status-trca { color: #666; font-weight: 600; }
+#gap-table .status-review { color: #0b7285; font-weight: 600; }
+#gap-table .reasons { display: block; color: var(--muted); font-size: .85em; }
+#gap-table .disputed { display: block; color: var(--muted); font-size: .85em; font-weight: 400; }
 #gap-table .osm-blank { color: var(--muted); }
 #gap-table .osm-name { display: block; color: var(--muted); font-size: .85em; }
 #gap-table .osm-links { white-space: nowrap; }

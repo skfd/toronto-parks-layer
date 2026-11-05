@@ -133,6 +133,19 @@ OSM_AREA_TAGS = {
 # at 0.15 real partial matches start to go (Crescentwood Park, typed "Cresentwood"
 # in OSM, would read as missing rather than as the mismatch it is).
 MIN_OVERLAP_SHARE = 0.1
+# When a matched park's outlines disagree enough to be worth a look. Set from the
+# 20 worst pairs, reviewed against aerials on 2026-11-04. These only decide what
+# a person is asked to look at, so they lean towards flagging: a false flag costs
+# one glance, and Beare Hill Park sitting inside Rouge National Urban Park is one.
+# Its OSM area covers this much of another named City park of at least this size;
+REVIEW_COVERED_SHARE = 0.5
+REVIEW_MIN_NEIGHBOUR_HA = 0.5
+# a differently named OSM area holds this much of it, more than its own area does;
+REVIEW_INSIDE_SHARE = 0.3
+REVIEW_INSIDE_MIN_HA = 1
+# or shared area over combined area is under this, with this much in dispute.
+REVIEW_MAX_OVERLAP = 0.5
+REVIEW_MIN_DISPUTED_HA = 10
 OSM_CACHE_PATH = os.path.join(DATA_DIR, "osm-parks.json")
 # When the cached Overpass reply was fetched, and from where. The cache file's
 # own mtime cannot say this -- a fallback run rewrites nothing.

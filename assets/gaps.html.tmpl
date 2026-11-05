@@ -30,6 +30,7 @@
     <div class="count unnamed"><strong>{{UNNAMED_COUNT}}</strong><span>OSM area unnamed</span></div>
     <div class="count retag"><strong>{{RETAG_COUNT}}</strong><span>double-tagged</span></div>
     <div class="count trca"><strong>{{TRCA_COUNT}}</strong><span>TRCA parcels</span></div>
+    <div class="count review"><strong>{{REVIEW_COUNT}}</strong><span>worth a look</span></div>
     <div class="count"><strong>{{CITY_COUNT}}</strong><span>City polygons</span></div>
     <div class="count"><strong>{{OSM_COUNT}}</strong><span>OSM park areas</span></div>
     <div class="count meta-count">City data {{DATA_DATE}} &middot; OSM data {{OSM_DATE}} &middot; compared {{BUILD_DATE}}</div>
@@ -55,6 +56,8 @@
           <input type="checkbox" id="show-retag" checked> Double-tagged</label>
         <label><span class="swatch trca"></span>
           <input type="checkbox" id="show-trca"> TRCA lands</label>
+        <label><span class="swatch review"></span>
+          <input type="checkbox" id="show-review"> Worth a look</label>
         <input type="search" id="filter" placeholder="Filter by name...">
       </div>
       <p class="hint">
@@ -65,6 +68,11 @@
         <strong>OSM&nbsp;&middot;&nbsp;iD&nbsp;&middot;&nbsp;JOSM</strong> links).
         Matching is by spatial overlap &mdash; verify against imagery before
         editing OSM.
+      </p>
+      <p class="hint">
+        <strong>Worth a look</strong> rows are not gaps: the names agree but the
+        outlines do not, and either side may be right. Most disputed first; the
+        OSM outline is dashed red.
       </p>
     </div>
     <div class="table-scroll">

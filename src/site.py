@@ -96,6 +96,7 @@ def _build_gaps_page(build_date):
         "{{UNNAMED_COUNT}}": f"{summary.get('unnamed', 0):,}",
         "{{RETAG_COUNT}}": f"{summary.get('retag', 0):,}",
         "{{TRCA_COUNT}}": f"{summary.get('trca', 0):,}",
+        "{{REVIEW_COUNT}}": f"{summary.get('review', 0):,}",
         "{{CITY_COUNT}}": f"{summary.get('city', 0):,}",
         "{{OSM_COUNT}}": f"{summary.get('osm_rings', 0):,}",
         "{{OSM_DATE}}": summary.get("osm_date", build_date),

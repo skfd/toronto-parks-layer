@@ -5,7 +5,7 @@
 
   var COLORS = {
     missing: "#7048e8", mismatch: "#1c7ed6", unnamed: "#e8590c", retag: "#c2255c",
-    trca: "#868e96",
+    trca: "#868e96", review: "#0c8599",
   };
   var PAD_M = 30;  // metres around a feature for the JOSM download box
   var JOSM = "http://127.0.0.1:8111/load_and_zoom";
@@ -13,6 +13,7 @@
   var features = [];
   var markers = [];      // CircleMarker per feature, indexed like features
   var highlight = null;  // outline of the currently selected gap
+  var osmOutline = null; // its OSM outline, for a row marked worth a look
   var selectedRow = null;
   var selectedIndex = null;  // feature index of the current selection
 
@@ -103,17 +104,19 @@
     return a / 2;
   }
 
-  // [south, west, north, east] of a geometry, padded by PAD_M.
-  function bounds(geom) {
+  // [south, west, north, east] of a feature and its OSM outline, padded by PAD_M.
+  function bounds(f) {
     var s = 90, w = 180, n = -90, e = -180;
-    (function walk(c) {
+    function walk(c) {
       if (typeof c[0] === "number") {
         s = Math.min(s, c[1]); n = Math.max(n, c[1]);
         w = Math.min(w, c[0]); e = Math.max(e, c[0]);
       } else {
         c.forEach(walk);
       }
-    })(geom.coordinates);
+    }
+    walk(f.geometry.coordinates);
+    if (f.properties.osm_geom) { walk(f.properties.osm_geom.coordinates); }
     var dLat = PAD_M / 111320;
     var dLon = PAD_M / (111320 * Math.cos((s + n) / 2 * Math.PI / 180));
     return [s - dLat, w - dLon, n + dLat, e + dLon];
@@ -125,7 +128,7 @@
   // to localhost, but not a link the mapper clicks. The tab shows JOSM's "OK",
   // or a connection error when JOSM or its remote control is off.
   function josmUrl(f, select) {
-    var b = bounds(f.geometry);
+    var b = bounds(f);
     var source = "City of Toronto Parks";
     return JOSM + "?left=" + b[1].toFixed(6) + "&right=" + b[3].toFixed(6) +
       "&top=" + b[2].toFixed(6) + "&bottom=" + b[0].toFixed(6) +
@@ -171,22 +174,34 @@
   function popupHtml(f) {
     var p = f.properties;
     var h = "<strong>" + esc(p.name || "(unnamed)") + "</strong><br>" +
-      esc(p["class"]) + " &middot; " + p.status;
+      esc(p["class"]) + " &middot; " +
+      (p.status === "review" ? "worth a look" : p.status);
     if (p.status === "mismatch") {
       h += "<br>OSM name: " + (p.osm_name ? esc(p.osm_name) : "<em>none</em>");
     }
     if (p.status === "retag") {
       h += "<br>Already leisure=park: remove landuse=recreation_ground";
     }
+    if (p.status === "review") {
+      h += "<br>" + reviewFacts(p) + "<br>" + p.reasons.map(esc).join("<br>");
+    }
     var links = osmPairHtml(f);
     if (links) { h += "<br>" + links; }
     return h;
   }
 
+  function reviewFacts(p) {
+    return "City " + p.city_ha + " ha &middot; OSM " + p.osm_ha + " ha &middot; " +
+      p.shared_pct + "% shared";
+  }
+
   function buildTable() {
     var tbody = document.querySelector("#gap-table tbody");
+    // Rows worth a look lead, most disputed first; the gaps follow by name.
     var rows = features.slice().sort(function (a, b) {
-      return (a.properties.name || "").localeCompare(b.properties.name || "");
+      var da = a.properties.disputed_ha || 0, db = b.properties.disputed_ha || 0;
+      return db - da ||
+        (a.properties.name || "").localeCompare(b.properties.name || "");
     });
     tbody.innerHTML = rows.map(function (f) {
       var p = f.properties;
@@ -197,9 +212,9 @@
         : '<span class="osm-blank">&mdash;</span>';
       return '<tr data-i="' + p._i + '" data-status="' + p.status +
         '" data-name="' + esc((p.name || "").toLowerCase()) + '">' +
-        "<td>" + esc(p.name || "(unnamed)") + "</td>" +
+        "<td>" + esc(p.name || "(unnamed)") + reasonsHtml(p) + "</td>" +
         "<td>" + esc(p["class"]) + "</td>" +
-        '<td class="status-' + p.status + '">' + p.status + "</td>" +
+        '<td class="status-' + p.status + '">' + statusHtml(p) + "</td>" +
         "<td>" + osm + "</td></tr>";
     }).join("");
 
@@ -210,6 +225,18 @@
     });
   }
 
+  function reasonsHtml(p) {
+    if (p.status !== "review") { return ""; }
+    return '<span class="reasons">' + reviewFacts(p) + "<br>" +
+      p.reasons.map(esc).join("<br>") + "</span>";
+  }
+
+  function statusHtml(p) {
+    return p.status === "review"
+      ? 'worth a look<span class="disputed">' + p.disputed_ha + " ha in dispute</span>"
+      : p.status;
+  }
+
   // Select a gap: outline it, fit the map, open its popup, mark its row.
   function select(i, fromTable) {
     var f = features[i];
@@ -217,10 +244,18 @@
     selectedIndex = i;
 
     if (highlight) { map.removeLayer(highlight); }
+    if (osmOutline) { map.removeLayer(osmOutline); osmOutline = null; }
     highlight = L.geoJSON(f, {
       style: { color: "#0a7", weight: 3, fill: false },
     }).addTo(map);
-    map.fitBounds(highlight.getBounds(), { maxZoom: 17, padding: [40, 40] });
+    var view = highlight.getBounds();
+    if (f.properties.osm_geom) {
+      osmOutline = L.geoJSON(f.properties.osm_geom, {
+        style: { color: "#d6336c", weight: 3, dashArray: "6 5", fill: false },
+      }).addTo(map);
+      view.extend(osmOutline.getBounds());
+    }
+    map.fitBounds(view, { maxZoom: 17, padding: [40, 40] });
     if (markers[i]) { markers[i].openPopup(); }
 
     if (selectedRow) { selectedRow.classList.remove("selected"); }
@@ -239,6 +274,7 @@
       unnamed: document.getElementById("show-unnamed"),
       retag: document.getElementById("show-retag"),
       trca: document.getElementById("show-trca"),
+      review: document.getElementById("show-review"),
     };
     var filter = document.getElementById("filter");
 

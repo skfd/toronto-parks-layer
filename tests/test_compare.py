@@ -337,6 +337,100 @@ def test_a_plain_recreation_ground_is_not_double_tagged(tmp_path, monkeypatch):
     assert _gap(tmp_path, monkeypatch, "Terry Fox Park", _box(0, 0, 100, 100), osm) is None
 
 
+def _reviewed(tmp_path, monkeypatch, parks, *osm):
+    """The review rows for (name, ring) City polygons, worst first."""
+    slim = tmp_path / "slim.geojsonl"
+    slim.write_text("".join(json.dumps({
+        "type": "Feature",
+        "properties": {"name": name, "class": "Park", "area_id": i},
+        "geometry": {"type": "Polygon", "coordinates": [[list(p) for p in ring]]},
+    }) + "\n" for i, (name, ring) in enumerate(parks)), encoding="utf-8")
+    monkeypatch.setattr(config, "SLIM_PATH", str(slim))
+    city = list(compare._city_features())
+    rings = compare._osm_rings({"elements": list(osm)})
+    gaps, _counts = compare._match(city, rings)
+    return [f["properties"] for f in compare._reviews(city, rings, gaps)]
+
+
+def test_an_osm_area_spread_over_a_neighbour_is_worth_a_look(tmp_path, monkeypatch):
+    # Moatfield Farm Park's OSM way ran on over Betty Sutherland Trail Park.
+    osm = _osm(1, _box(0, 0, 400, 100), leisure="park", name="Moatfield Farm Park")
+    rows = _reviewed(tmp_path, monkeypatch,
+                     [("Moatfield Farm Park", _box(0, 0, 100, 100)),
+                      ("Betty Sutherland Trail Park", _box(100, 0, 300, 100))], osm)
+    assert [r["name"] for r in rows] == ["Moatfield Farm Park"]
+    assert rows[0]["reasons"] == ["OSM area also covers Betty Sutherland Trail Park"]
+    assert rows[0]["status"] == "review"
+    assert rows[0]["osm_url"].endswith("/way/1")
+    assert rows[0]["osm_geom"]["type"] == "Polygon"
+
+
+def test_a_tiny_neighbour_is_not_a_reason_to_look(tmp_path, monkeypatch):
+    osm = _osm(1, _box(0, 0, 130, 100), leisure="park", name="Oriole Park")
+    assert _reviewed(tmp_path, monkeypatch,
+                     [("Oriole Park", _box(0, 0, 100, 100)),
+                      ("Oriole Parkette", _box(100, 0, 30, 100))], osm) == []
+
+
+def test_a_park_held_by_another_osm_name_is_worth_a_look(tmp_path, monkeypatch):
+    # OSM gave Colonel Danforth Park's name to a patch, and the valley to a ravine.
+    patch = _osm(1, _box(0, 0, 50, 50), leisure="park", name="Colonel Danforth Park")
+    ravine = _osm(2, _box(50, 0, 250, 300), leisure="park", name="Highland Creek Ravine")
+    rows = _reviewed(tmp_path, monkeypatch,
+                     [("Colonel Danforth Park", _box(0, 0, 300, 300))], patch, ravine)
+    assert rows[0]["reasons"][0] == "Mostly inside OSM's Highland Creek Ravine"
+
+
+def test_a_big_gap_between_the_outlines_is_worth_a_look(tmp_path, monkeypatch):
+    # Port Union Waterfront Park: a square in OSM, a shoreline in the City's data.
+    osm = _osm(1, _box(0, 0, 100, 100), leisure="park", name="Port Union Park")
+    rows = _reviewed(tmp_path, monkeypatch,
+                     [("Port Union Park", _box(0, 0, 400, 400))], osm)
+    assert rows[0]["reasons"] == ["Little shared area"]
+    assert rows[0]["city_ha"] == pytest.approx(16, abs=0.2)
+    assert rows[0]["osm_ha"] == pytest.approx(1, abs=0.1)
+    assert rows[0]["disputed_ha"] == pytest.approx(15, abs=0.2)
+    assert rows[0]["shared_pct"] == 6
+
+
+def test_a_park_in_two_polygons_is_judged_whole(tmp_path, monkeypatch):
+    # St. George's Golf and Country Club: two City polygons, one OSM outline.
+    osm = _osm(1, _box(0, 0, 800, 400), leisure="golf_course", name="St. George's Golf Club")
+    assert _reviewed(tmp_path, monkeypatch,
+                     [("St. George's Golf Club", _box(0, 0, 400, 400)),
+                      ("St. George's Golf Club", _box(400, 0, 400, 400))], osm) == []
+
+
+def test_a_park_in_two_polygons_gets_one_row(tmp_path, monkeypatch):
+    osm = _osm(1, _box(350, 0, 100, 100), leisure="park", name="Port Union Park")
+    rows = _reviewed(tmp_path, monkeypatch,
+                     [("Port Union Park", _box(0, 0, 400, 400)),
+                      ("Port Union Park", _box(400, 0, 400, 400))], osm)
+    assert len(rows) == 1
+    assert rows[0]["city_ha"] == pytest.approx(32, abs=0.4)
+
+
+def test_a_small_disagreement_is_left_alone(tmp_path, monkeypatch):
+    osm = _osm(1, _box(0, 0, 100, 30), leisure="park", name="Dean Park")
+    assert _reviewed(tmp_path, monkeypatch, [("Dean Park", _box(0, 0, 100, 100))], osm) == []
+
+
+def test_a_gap_is_not_also_worth_a_look(tmp_path, monkeypatch):
+    osm = _osm(1, _box(0, 0, 100, 100), leisure="park",
+               landuse="recreation_ground", name="Port Union Park")
+    assert _reviewed(tmp_path, monkeypatch,
+                     [("Port Union Park", _box(0, 0, 400, 400))], osm) == []
+
+
+def test_review_rows_come_worst_first(tmp_path, monkeypatch):
+    small = _osm(1, _box(0, 0, 100, 100), leisure="park", name="Small Dispute")
+    large = _osm(2, _box(2000, 0, 100, 100), leisure="park", name="Large Dispute")
+    rows = _reviewed(tmp_path, monkeypatch,
+                     [("Small Dispute", _box(0, 0, 400, 400)),
+                      ("Large Dispute", _box(2000, 0, 800, 800))], small, large)
+    assert [r["name"] for r in rows] == ["Large Dispute", "Small Dispute"]
+
+
 def test_a_way_that_doubles_back_is_not_a_ring():
     there_and_back = [{"lon": X0, "lat": Y0}, {"lon": X0 + 0.001, "lat": Y0},
                       {"lon": X0, "lat": Y0}]

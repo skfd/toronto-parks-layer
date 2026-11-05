@@ -12,6 +12,10 @@ written to data/gaps.geojson:
   * "trca"     -- a numbered TRCA Lands parcel that is any of the above; these
                   are not real park names, so they get their own category.
 
+Parks that pass all of that can still land in the file as "review": the names
+agree but the outlines do not. That is a prompt to compare two shapes, not a
+gap -- see _reviews.
+
 Overlap is the area two polygons really share, measured with shapely after a
 bounding-box prefilter -- see _find_match for why a centre-point test is not
 enough. A flaky Overpass falls back to the cached response, but only after
@@ -19,6 +23,7 @@ every mirror has been tried several times -- see _load_osm.
 """
 
 import json
+import math
 import os
 import re
 import time
@@ -28,7 +33,8 @@ from urllib.parse import urlsplit
 import requests
 from addressvault import net
 from shapely import make_valid
-from shapely.geometry import Polygon, shape
+from shapely.geometry import Polygon, mapping, shape
+from shapely.ops import unary_union
 
 from src import config, history
 
@@ -42,16 +48,18 @@ def compare():
     print(f"City polygons:       {len(city):,}")
 
     gaps, counts = _match(city, rings)
-    _write_gaps(gaps)
+    reviews = _reviews(city, rings, gaps)
+    _write_gaps(gaps + reviews)
 
     summary = {"osm_rings": len(rings), "city": len(city),
-               "osm_date": osm_date, "osm_stale": from_cache, **counts}
+               "osm_date": osm_date, "osm_stale": from_cache,
+               "review": len(reviews), **counts}
     with open(config.GAPS_COUNT_PATH, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     print(
         f"Gaps: {counts['missing']:,} missing, {counts['mismatch']:,} mismatch, "
         f"{counts['unnamed']:,} unnamed OSM, {counts['retag']:,} to retag, "
-        f"{counts['trca']:,} TRCA"
+        f"{counts['trca']:,} TRCA; {len(reviews):,} worth a look"
     )
     if from_cache:
         print(f"NOTE: compared against cached OSM data from {osm_date}, "
@@ -389,6 +397,110 @@ def _find_match(c, rings):
     if name_fallback:
         return name_fallback
     return best if covered >= config.MIN_OVERLAP_SHARE else None
+
+
+# --- Worth a look -----------------------------------------------------------
+
+def _reviews(city, rings, gaps):
+    """Features for matched parks whose outlines disagree, most disputed first.
+
+    Kept apart from _match on purpose. A gap is something to fix; this is only a
+    reason to look, because the City and OSM can both be right about a park's
+    extent. Reviewed on 2026-11-04: of the 20 worst, 16 looked like OSM problems
+    and 4 were two fair ideas of one park, and no test here tells them apart. So
+    these stay out of the gap counts and the history chart, which is the record
+    of work going down, and false flags are accepted.
+    """
+    flagged = {g["properties"]["area_id"] for g in gaps}
+    rows = {}
+    for c in city:
+        if c["area_id"] in flagged or not c["name"] or _is_trca(c["name"]):
+            continue
+        row = _review(c, city, rings)
+        if row:
+            rows[row["properties"]["name"], row["properties"]["osm_url"]] = row
+    rows = list(rows.values())
+    rows.sort(key=lambda f: -f["properties"]["disputed_ha"])
+    return rows
+
+
+def _review(c, city, rings):
+    """The review feature for one matched City park, or None if it is fine.
+
+    A park the City holds as several polygons is judged whole, or each half of
+    a golf club looks like it shares little with the club's one OSM outline.
+    """
+    cnorm = _norm(c["name"])
+    same = [r for r in rings
+            if _bbox_overlap(c["bbox"], r["bbox"]) and _norm(r["name"]) == cnorm]
+    if not same:
+        return None
+    osm = unary_union([r["shape"] for r in same])
+    whole = unary_union([d["shape"] for d in city if d["name"] == c["name"]
+                         and _bbox_overlap(d["bbox"], osm.bounds)])
+    c = {**c, "shape": whole, "bbox": whole.bounds, "geom": mapping(whole)}
+    shared = whole.intersection(osm).area
+    combined = whole.area + osm.area - shared
+    lat = (c["bbox"][1] + c["bbox"][3]) / 2
+    disputed_ha = _hectares(combined - shared, lat)
+
+    reasons = [f"OSM area also covers {name}"
+               for name in _parks_covered(osm, cnorm, city, lat)]
+    reasons += [f"Mostly inside OSM's {name}"
+                for name in _osm_owners(c, shared, cnorm, rings, lat)]
+    if (shared / combined < config.REVIEW_MAX_OVERLAP
+            and disputed_ha >= config.REVIEW_MIN_DISPUTED_HA):
+        reasons.append("Little shared area")
+    if not reasons:
+        return None
+
+    match = max(same, key=lambda r: whole.intersection(r["shape"]).area)
+    feature = _gap_feature(c, "review", match)
+    feature["properties"].update({
+        "reasons": reasons,
+        "city_ha": round(_hectares(whole.area, lat), 1),
+        "osm_ha": round(_hectares(osm.area, lat), 1),
+        "shared_pct": round(100 * shared / combined),
+        "disputed_ha": round(disputed_ha, 1),
+        "osm_geom": _round_geom(mapping(osm)),
+    })
+    return feature
+
+
+def _parks_covered(osm, cnorm, city, lat):
+    """Other named City parks that the same-named OSM area mostly covers."""
+    names = set()
+    for d in city:
+        if (not d["name"] or _is_trca(d["name"])
+                or not _bbox_overlap(d["bbox"], osm.bounds)
+                or _norm(d["name"]) == cnorm):
+            continue
+        area = d["shape"].area
+        if _hectares(area, lat) < config.REVIEW_MIN_NEIGHBOUR_HA:
+            continue
+        if d["shape"].intersection(osm).area / area >= config.REVIEW_COVERED_SHARE:
+            names.add(d["name"])
+    return sorted(names)
+
+
+def _osm_owners(c, shared, cnorm, rings, lat):
+    """Differently named OSM areas holding more of the park than its own does."""
+    names = set()
+    for r in rings:
+        if (not r["name"] or r["allotment"]
+                or not _bbox_overlap(c["bbox"], r["bbox"])
+                or _norm(r["name"]) == cnorm):
+            continue
+        held = c["shape"].intersection(r["shape"]).area
+        if (held > shared and held / c["shape"].area >= config.REVIEW_INSIDE_SHARE
+                and _hectares(held, lat) >= config.REVIEW_INSIDE_MIN_HA):
+            names.add(r["name"])
+    return sorted(names)
+
+
+def _hectares(area, lat):
+    """An area in square degrees as hectares, at this latitude."""
+    return area * 111320 ** 2 * math.cos(math.radians(lat)) / 10000
 
 
 def _gap_feature(c, status, match):
