@@ -1,0 +1,4 @@
+{
+  "command": "python -m pytest -q",
+  "timeoutSeconds": 120
+}
