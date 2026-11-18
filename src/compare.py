@@ -29,6 +29,8 @@ import time
 from datetime import date, datetime, timedelta, timezone
 
 import requests
+from layerkit.geom import bbox_overlap as _bbox_overlap
+from layerkit.geom import relation_outer_loops as _relation_outer_loops
 from layerkit import overpass
 # Raised by overpass.load_osm; callers and tests name it as compare's.
 from layerkit.overpass import OsmUnavailable  # noqa: F401
@@ -162,49 +164,6 @@ def _osm_rings(data):
             for loop in _relation_outer_loops(el):
                 rings.append(_make_ring(loop, tags, "relation", el["id"]))
     return [r for r in rings if r]
-
-
-def _relation_outer_loops(rel):
-    """Stitch a multipolygon relation's outer member ways into closed loops.
-
-    OSM splits a long outer boundary across several ways; only joined
-    end-to-end do they form the ring(s). Without this, each open segment looks
-    like a degenerate sliver. Returns a list of point lists (geometry dicts),
-    one per assembled loop.
-    """
-    segs = [m["geometry"] for m in rel.get("members", [])
-            if m.get("type") == "way" and m.get("role") in ("outer", "")
-            and m.get("geometry")]
-    loops = []
-    used = [False] * len(segs)
-    for i in range(len(segs)):
-        if used[i]:
-            continue
-        used[i] = True
-        loop = list(segs[i])
-        grew = True
-        while grew and _pt(loop[0]) != _pt(loop[-1]):
-            grew = False
-            for j, other in enumerate(segs):
-                if used[j]:
-                    continue
-                if _pt(other[0]) == _pt(loop[-1]):
-                    loop.extend(other[1:])
-                elif _pt(other[-1]) == _pt(loop[-1]):
-                    loop.extend(reversed(other[:-1]))
-                elif _pt(other[-1]) == _pt(loop[0]):
-                    loop[:0] = other[:-1]
-                elif _pt(other[0]) == _pt(loop[0]):
-                    loop[:0] = list(reversed(other[1:]))
-                else:
-                    continue
-                used[j] = grew = True
-        loops.append(loop)
-    return loops
-
-
-def _pt(p):
-    return (p["lat"], p["lon"])
 
 
 def _make_ring(geom, tags, otype, oid):
@@ -456,10 +415,6 @@ def _write_gaps(gaps):
 def _valid(geom):
     """The polygon as an area shapely can intersect; empty if it has none."""
     return make_valid(geom, method="structure", keep_collapsed=False)
-
-
-def _bbox_overlap(a, b):
-    return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
 
 
 # The City appends a borough to disambiguate duplicate names ("Oriole Park -
