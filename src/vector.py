@@ -6,7 +6,8 @@ tippecanoe does not run natively on Windows, so this module shells out to
 
 import os
 import shutil
-import subprocess
+
+from layerkit import wsl
 
 from src import config
 
@@ -74,22 +75,9 @@ def build_vector(slim_path=None):
 
 def win_to_wsl(path):
     """Convert a Windows path to its /mnt/<drive> WSL equivalent."""
-    drive, rest = os.path.splitdrive(os.path.abspath(path))
-    return f"/mnt/{drive.rstrip(':').lower()}{rest.replace(chr(92), '/')}"
+    return wsl.win_to_wsl(path)
 
 
 def _wsl(command):
     """Run a bash command inside WSL. Returns stderr; raises on failure."""
-    result = subprocess.run(
-        ["wsl", "-d", config.WSL_DISTRO, "bash", "-lc", command],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    if result.stdout:
-        print(result.stdout.rstrip())
-    if result.returncode != 0:
-        print(result.stderr.rstrip())
-        raise RuntimeError(
-            f"WSL command failed (exit {result.returncode}). "
-            f"Is WSL set up? See wsl-setup.md."
-        )
-    return result.stderr or ""
+    return wsl.run(command, config.WSL_DISTRO)

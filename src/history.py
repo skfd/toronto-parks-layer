@@ -15,13 +15,10 @@ side is not archived; Green Spaces changes monthly and slowly, and the page
 says which points are reconstructed.
 """
 
-import json
-import os
 import time
-from datetime import date, timedelta
 
-import requests
 from addressvault import net
+from layerkit import history as _kit
 
 from src import config
 
@@ -30,50 +27,18 @@ FIELDS = ("missing", "mismatch", "unnamed", "retag", "trca", "city", "osm_rings"
 
 def record(summary, day=None):
     """Append the run's row (replacing an earlier row from the same day)."""
-    if summary.get("osm_stale"):
-        print("History: not recorded (compared against cached OSM).")
-        return None
-    day = day or date.today().isoformat()
-    row = {"date": day, "osm_date": summary.get("osm_date") or day,
-           "source": "live", **{k: summary.get(k, 0) for k in FIELDS}}
-    seed()
-    rows = [r for r in load() if r["date"] != day] + [row]
-    _write(rows)
-    print(f"History: recorded {day} ({len(rows):,} runs on record).")
-    return row
+    return _kit.record(summary, FIELDS, path=config.HISTORY_PATH, seed=seed,
+                       day=day)
 
 
 def load():
     """All rows, oldest first. An absent file is an empty history."""
-    if not os.path.isfile(config.HISTORY_PATH):
-        return []
-    with open(config.HISTORY_PATH, encoding="utf-8") as f:
-        rows = [json.loads(line) for line in f if line.strip()]
-    return sorted(rows, key=lambda r: r["date"])
+    return _kit.load(config.HISTORY_PATH)
 
 
 def seed():
-    """Start a checkout that has no history from the published copy.
-
-    data/ is not in git, so a fresh clone (or a wiped data dir) would otherwise
-    begin the record again from this week. Best-effort: before the first
-    publish there is nothing to fetch, and that is fine.
-    """
-    if os.path.isfile(config.HISTORY_PATH):
-        return False
-    try:
-        resp = requests.get(config.HISTORY_URL,
-                            headers={"User-Agent": config.USER_AGENT}, timeout=30)
-    except requests.RequestException as e:
-        print(f"History: could not fetch the published copy ({e}).")
-        return False
-    if resp.status_code != 200 or not resp.text.strip():
-        return False
-    os.makedirs(config.DATA_DIR, exist_ok=True)
-    with open(config.HISTORY_PATH, "w", encoding="utf-8") as f:
-        f.write(resp.text if resp.text.endswith("\n") else resp.text + "\n")
-    print(f"History: seeded from {config.HISTORY_URL}.")
-    return True
+    """Start a checkout that has no history from the published copy."""
+    return _kit.seed(config.HISTORY_PATH, config.HISTORY_URL, config.USER_AGENT)
 
 
 def backfill(since, until, step_days, pause, sleep=time.sleep):
@@ -119,15 +84,8 @@ def backfill(since, until, step_days, pause, sleep=time.sleep):
 
 def dates(since, until, step_days):
     """``since``, then every ``step_days``, while before ``until``."""
-    d = since
-    while d < until:
-        yield d
-        d += timedelta(days=step_days)
+    return _kit.dates(since, until, step_days)
 
 
 def _write(rows):
-    os.makedirs(config.DATA_DIR, exist_ok=True)
-    rows = sorted(rows, key=lambda r: r["date"])
-    with open(config.HISTORY_PATH, "w", encoding="utf-8") as f:
-        for r in rows:
-            f.write(json.dumps(r) + "\n")
+    _kit.write(config.HISTORY_PATH, rows)
