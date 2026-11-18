@@ -147,7 +147,7 @@ def test_a_good_fetch_records_when_and_where_it_came_from(paths, monkeypatch):
     _data, fetched, _from_cache = compare._load_osm()
     with open(config.OSM_FETCH_PATH, encoding="utf-8") as f:
         sidecar = json.load(f)
-    assert sidecar == {"fetched": fetched, "mirror": "good.example"}
+    assert (sidecar["fetched"], sidecar["mirror"]) == (fetched, "good.example")
 
 
 def test_the_cache_is_used_only_after_every_mirror_fails(paths, monkeypatch):
