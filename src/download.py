@@ -14,11 +14,11 @@ instead of costing the whole download.
 
 import json
 import os
-import time
 from datetime import date, datetime
 
 import requests
 from addressvault import net
+from layerkit import citydata
 
 from src import config
 
@@ -97,60 +97,11 @@ def _head():
 
 
 def _fetch(url, dest):
-    """Stream ``url`` to ``dest``; return the response headers worth keeping.
-
-    Retries a dropped connection, resuming with a Range request where the server
-    allows it and starting over where it does not. A content-encoded body cannot
-    be resumed: Range counts encoded bytes, and what is on disk is decoded. The
-    kept headers come from the full response, never a 206 -- a range reply's
-    Content-Length describes the tail, and the sidecar compares whole files.
-    """
-    got = 0
-    resumable = False
-    headers = {}
-    for attempt in range(RETRIES + 1):
-        want = {"Range": f"bytes={got}-"} if got else {}
-        try:
-            with requests.get(url, stream=True, timeout=600, headers=want) as resp:
-                resp.raise_for_status()
-                if resp.status_code != 206:  # full body: (re)start from byte 0
-                    got = 0
-                    resumable = not resp.headers.get("Content-Encoding")
-                    headers = {
-                        "last_modified": resp.headers.get("Last-Modified"),
-                        "content_length": _parse_int(
-                            resp.headers.get("Content-Length")
-                        ),
-                    }
-                total = headers.get("content_length") or 0
-                with open(dest, "ab" if got else "wb") as f:
-                    for chunk in resp.iter_content(chunk_size=1024 * 256):
-                        f.write(chunk)
-                        got += len(chunk)
-                        if total:
-                            print(
-                                f"\r  {got // (1024 * 1024)} / "
-                                f"{total // (1024 * 1024)} MB "
-                                f"({got * 100 // total}%)",
-                                end="", flush=True,
-                            )
-            return headers
-        except (requests.ConnectionError, requests.Timeout,
-                requests.exceptions.ChunkedEncodingError) as e:
-            total = headers.get("content_length")
-            if resumable and total and got >= total:
-                return headers  # dropped on the last chunk; the file is whole
-            if attempt == RETRIES:
-                # Out of retries. If the link itself is down then this was never
-                # a portal failure -- say so, and the run exits 75 instead of
-                # logging a build error against a site never reached at all.
-                net.wait_for_link(wait=False)
-                raise
-            if not resumable:
-                got = 0
-            print(f"\n  download dropped at {got:,} bytes ({e});"
-                  f" retrying in {RETRY_WAIT}s")
-            time.sleep(RETRY_WAIT)
+    """Stream ``url`` to ``dest``, resuming a dropped connection; return the
+    Last-Modified and Content-Length of the full response."""
+    # user_agent=None: this download has never sent one.
+    return citydata.stream(url, dest, user_agent=None,
+                           retries=RETRIES, wait=RETRY_WAIT)
 
 
 def _load_sidecar():
