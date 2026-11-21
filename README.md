@@ -4,11 +4,11 @@ Turns the City of Toronto [Green Spaces](https://open.toronto.ca/dataset/green-s
 dataset (~1,750 park-ish polygons) into map-tile layers that OpenStreetMap
 mappers can add to the **JOSM** and **iD** editors as a reference overlay.
 
-**Live layer and how to add it: https://skfd.github.io/toronto-parks-layer/**
+**Live layer and how to add it: https://toronto-maps.github.io/toronto-parks-layer/**
 
 It is a sibling of
-[toronto-addresses-layer](https://github.com/skfd/toronto-addresses-layer) and
-[toronto-waterways-layer](https://github.com/skfd/toronto-waterways-layer):
+[toronto-addresses-layer](https://github.com/toronto-maps/toronto-addresses-layer) and
+[toronto-waterways-layer](https://github.com/toronto-maps/toronto-waterways-layer):
 the same `download -> slim -> tiles -> site -> publish` pipeline, pointed at
 the Green Spaces polygons. (The City's older "Parks" dataset is deprecated;
 its page redirects to Green Spaces.)
@@ -26,7 +26,7 @@ its page redirects to Green Spaces.)
   when zoomed in; at the top raster zoom every named park is labelled.
 - A **landing page** with copy-paste "add this layer" instructions for both
   editors.
-- A **gap-review page** ([`/gaps/`](https://skfd.github.io/toronto-parks-layer/gaps/))
+- A **gap-review page** ([`/gaps/`](https://toronto-maps.github.io/toronto-parks-layer/gaps/))
   that compares the City polygons against
   park areas already in OpenStreetMap and lists the gaps &mdash; City parks with
   no overlapping OSM area ("missing"), matched parks whose OSM name differs
@@ -38,7 +38,7 @@ its page redirects to Green Spaces.)
   are pulled from Overpass; matching is by the area the polygons really share,
   with `landuse=allotments` accepted only for the City's gardens (see
   [`src/compare.py`](src/compare.py)). Its
-  [history page](https://skfd.github.io/toronto-parks-layer/gaps/history.html)
+  [history page](https://toronto-maps.github.io/toronto-parks-layer/gaps/history.html)
   charts those counts over time, one point per weekly run. Matched parks whose
   outlines disagree are listed apart as "worth a look", most disputed first and
   off by default. They are prompts to compare two shapes, not gaps, so they stay
@@ -90,8 +90,8 @@ Build output lands in `build/site/`; that directory is what gets published.
 ## Tile endpoints
 
 ```
-https://skfd.github.io/toronto-parks-layer/tiles/vector/{z}/{x}/{y}.pbf   (z10-19)
-https://skfd.github.io/toronto-parks-layer/tiles/raster/{z}/{x}/{y}.png   (z13-17)
+https://toronto-maps.github.io/toronto-parks-layer/tiles/vector/{z}/{x}/{y}.pbf   (z10-19)
+https://toronto-maps.github.io/toronto-parks-layer/tiles/raster/{z}/{x}/{y}.png   (z13-17)
 ```
 
 The vector layer name is `parks`.
@@ -140,7 +140,7 @@ task.
 
 Every live comparison appends one line to `data/history.jsonl` -- the date, the
 OSM data date, and the missing / mismatch / unnamed / TRCA counts -- and the
-site step charts it at [`/gaps/history.html`](https://skfd.github.io/toronto-parks-layer/gaps/history.html),
+site step charts it at [`/gaps/history.html`](https://toronto-maps.github.io/toronto-parks-layer/gaps/history.html),
 with the rows published beside it as `gaps/history.jsonl`. That is the whole
 record the observer keeps: the tiles and the gap list are rebuilt from scratch
 and force-pushed each week, but this file only grows, so the scheduled

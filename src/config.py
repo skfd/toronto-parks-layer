@@ -42,8 +42,8 @@ LICENSE_URL = "https://open.toronto.ca/open-data-licence/"
 ATTRIBUTION = "(c) City of Toronto, Open Government Licence - Toronto"
 
 # GitHub Pages target. Update both if the repo/account differs.
-GITHUB_REPO = "skfd/toronto-parks-layer"
-PAGES_URL = "https://skfd.github.io/toronto-parks-layer"
+GITHUB_REPO = "toronto-maps/toronto-parks-layer"
+PAGES_URL = "https://toronto-maps.github.io/toronto-parks-layer"
 
 # WSL distro that has tippecanoe installed (see wsl-setup.md).
 WSL_DISTRO = "Ubuntu"
@@ -117,7 +117,7 @@ OSM_MIN_ELEMENTS = 3000
 # no fresher than the cache it would replace, so it counts as no answer.
 OSM_MAX_AGE_DAYS = 3
 # Overpass rejects the default requests User-Agent (HTTP 406); identify the tool.
-USER_AGENT = "toronto-parks-layer/1.0 (https://github.com/skfd/toronto-parks-layer)"
+USER_AGENT = "toronto-parks-layer/1.0 (https://github.com/toronto-maps/toronto-parks-layer)"
 # Toronto bounding box (S, W, N, E), a touch larger than the city. OSM areas
 # outside the city simply match nothing, so a loose box is harmless.
 TORONTO_BBOX = (43.58, -79.64, 43.86, -79.12)

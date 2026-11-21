@@ -16,7 +16,7 @@ from src import publish as pub  # noqa: E402
 
 RESOLVER_FAILURE = (
     "git push --force origin gh-pages failed (exit 128):\n"
-    "fatal: unable to access 'https://github.com/skfd/toronto-parks-layer.git/': "
+    "fatal: unable to access 'https://github.com/toronto-maps/toronto-parks-layer.git/': "
     "Could not resolve host: github.com"
 )
 REJECTED = (
